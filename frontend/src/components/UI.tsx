@@ -103,6 +103,31 @@ export function StatusBadge({ status }: { status: "available" | "reserved" | "bo
   );
 }
 
+// Фото подтягивается автоматически по ссылке на товар (без ручной
+// загрузки - решение 2026-10-02, см. backend/src/services/linkPreview.ts).
+// Не у каждой ссылки получится - тогда просто нет картинки, это ожидаемо.
+export function Thumbnail({ src, size = 48 }: { src: string | null; size?: number }) {
+  if (!src) return null;
+  return (
+    <img
+      src={src}
+      alt=""
+      loading="lazy"
+      onError={(e) => {
+        e.currentTarget.style.display = "none";
+      }}
+      style={{
+        width: size,
+        height: size,
+        borderRadius: 10,
+        objectFit: "cover",
+        flexShrink: 0,
+        background: "var(--border)",
+      }}
+    />
+  );
+}
+
 export function ErrorBanner({ message }: { message: string }) {
   return (
     <div

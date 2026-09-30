@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, describeError, type WishlistResponse } from "../api";
-import { ErrorBanner, Header, Screen, StatusBadge } from "../components/UI";
+import { ErrorBanner, Header, Screen, StatusBadge, Thumbnail } from "../components/UI";
 
 // Спека итерации 1, п.1 + п.7: вишлист получателя со списком позиций и
 // отдельным пустым состоянием. В макете это два артборда (Main/Empty) -
@@ -170,6 +170,7 @@ export function MyWishlist() {
                   opacity: item.status === "bought" ? 0.6 : 1,
                 }}
               >
+                <Thumbnail src={item.imageUrl} />
                 <div style={{ flexGrow: 1, minWidth: 0 }}>
                   <div style={{ fontSize: 15, fontWeight: 600 }}>
                     {item.title ?? item.url}

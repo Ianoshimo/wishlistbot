@@ -1,7 +1,13 @@
-import type { FastifyInstance } from "fastify";
+import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { db } from "../db.js";
 import { reservationDeadline, resolveExpiredReservation } from "../services/reservation.js";
+import { resolveTelegramId } from "../auth/telegramAuth.js";
+
+function requireTelegramId(req: FastifyRequest, bodyTelegramId: string | undefined): string | null {
+  const initData = req.headers["x-telegram-init-data"];
+  return resolveTelegramId(typeof initData === "string" ? initData : undefined, bodyTelegramId);
+}
 
 // Спека итерации 1, п.2-3: бронирование с TTL и доверительная отметка
 // "куплено" (без колбэка маркетплейса - вне скоупа итерации 1).
@@ -15,13 +21,16 @@ export async function itemRoutes(app: FastifyInstance) {
       url: item.url,
       title: item.title,
       price: item.price,
+      imageUrl: item.imageUrl,
       status: item.status,
     };
   });
 
   app.post("/api/items/:itemId/reserve", async (req, reply) => {
     const { itemId } = z.object({ itemId: z.string() }).parse(req.params);
-    const body = z.object({ telegramId: z.string() }).parse(req.body);
+    const body = z.object({ telegramId: z.string().optional() }).parse(req.body);
+    const telegramId = requireTelegramId(req, body.telegramId);
+    if (!telegramId) return reply.code(401).send({ error: "unauthorized" });
 
     const item = await resolveExpiredReservation(itemId);
     if (item.status !== "available") {
@@ -34,14 +43,14 @@ export async function itemRoutes(app: FastifyInstance) {
       where: { id: item.wishlistId },
       include: { owner: true },
     });
-    if (wishlist.owner.telegramId === BigInt(body.telegramId)) {
+    if (wishlist.owner.telegramId === BigInt(telegramId)) {
       return reply.code(403).send({ error: "cannot_reserve_own_item" });
     }
 
     const user = await db.user.upsert({
-      where: { telegramId: BigInt(body.telegramId) },
+      where: { telegramId: BigInt(telegramId) },
       update: {},
-      create: { telegramId: BigInt(body.telegramId), firstName: "" },
+      create: { telegramId: BigInt(telegramId), firstName: "" },
     });
 
     // Беклог Б-5: между чтением статуса выше и этой записью мог успеть
@@ -68,7 +77,9 @@ export async function itemRoutes(app: FastifyInstance) {
 
   app.post("/api/items/:itemId/mark-bought", async (req, reply) => {
     const { itemId } = z.object({ itemId: z.string() }).parse(req.params);
-    const body = z.object({ telegramId: z.string() }).parse(req.body);
+    const body = z.object({ telegramId: z.string().optional() }).parse(req.body);
+    const telegramId = requireTelegramId(req, body.telegramId);
+    if (!telegramId) return reply.code(401).send({ error: "unauthorized" });
 
     const item = await resolveExpiredReservation(itemId);
     if (item.status !== "reserved") {
@@ -76,7 +87,7 @@ export async function itemRoutes(app: FastifyInstance) {
     }
 
     const user = await db.user.findUnique({
-      where: { telegramId: BigInt(body.telegramId) },
+      where: { telegramId: BigInt(telegramId) },
     });
     if (!user || item.reservedByUserId !== user.id) {
       return reply.code(403).send({ error: "not_your_reservation" });

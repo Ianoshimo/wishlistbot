@@ -42,6 +42,16 @@ export function ItemDetail() {
       <Header title="Подарок" backTo="/" />
       <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16, flexGrow: 1 }}>
         {error && <ErrorBanner message={error} />}
+        {item.imageUrl && (
+          <img
+            src={item.imageUrl}
+            alt=""
+            onError={(e) => {
+              e.currentTarget.style.display = "none";
+            }}
+            style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 14, background: "var(--border)" }}
+          />
+        )}
         <div>
           <div style={{ fontSize: 19, fontWeight: 700 }}>{item.title ?? item.url}</div>
           {item.price && (

@@ -4,6 +4,7 @@
 // приложении нет.
 
 interface TelegramWebApp {
+  initData: string;
   initDataUnsafe: {
     start_param?: string;
     user?: { id: number; first_name: string; username?: string };
@@ -66,6 +67,16 @@ export function getTelegramId(): string | null {
     localStorage.setItem(DEV_ID_KEY, devId);
   }
   return devId;
+}
+
+// Привязка логина через Telegram (2026-10-02): сырая подписанная строка
+// initData уходит на бэкенд заголовком на каждый запрос - там проверяется
+// HMAC-подпись (см. backend/src/auth/telegramAuth.ts), а не просто
+// телеграмовский user.id, которому раньше доверяли без проверки. Вне
+// настоящего Telegram строка пустая - бэкенд в дев-режиме падает обратно
+// на telegramId из тела запроса (см. getTelegramId выше).
+export function getInitData(): string {
+  return webApp?.initData ?? "";
 }
 
 // startapp=w_<slug> -> вишлист, startapp=p_<poolId> -> сбор.

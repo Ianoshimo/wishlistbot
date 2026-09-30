@@ -1,4 +1,4 @@
-import { getTelegramId } from "./telegram";
+import { getInitData, getTelegramId } from "./telegram";
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? "http://localhost:3000";
 
@@ -15,6 +15,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   wishlist_not_found: "Вишлист не найден",
   not_found: "Не найдено",
   validation_error: "Проверьте введённые данные",
+  unauthorized: "Не удалось подтвердить вход через Telegram - перезапустите бота",
 };
 
 export function describeError(err: unknown): string {
@@ -25,7 +26,13 @@ export function describeError(err: unknown): string {
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: {
+      "Content-Type": "application/json",
+      // Привязка логина через Telegram (2026-10-02) - бэкенд проверяет
+      // подпись, а не верит telegramId в теле (см. auth/telegramAuth.ts).
+      "X-Telegram-Init-Data": getInitData(),
+      ...init?.headers,
+    },
   });
   if (!res.ok) {
     const body = await res.json().catch(() => null);
@@ -42,6 +49,7 @@ export interface Item {
   url: string;
   title: string | null;
   price: number | null;
+  imageUrl: string | null;
   status: ItemStatus;
 }
 

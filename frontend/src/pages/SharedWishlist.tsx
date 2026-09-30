@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, describeError, type WishlistResponse } from "../api";
-import { ErrorBanner, Header, Screen, StatusBadge } from "../components/UI";
+import { ErrorBanner, Header, Screen, StatusBadge, Thumbnail } from "../components/UI";
 
 // Спека итерации 1, п.9 + флоу-итерация-1.md: первый переход по ссылке
 // показывает приглашение, повторный - сразу список. Метка "видел ли уже"
@@ -106,6 +106,7 @@ export function SharedWishlist() {
               borderRadius: 14,
             }}
           >
+            <Thumbnail src={item.imageUrl} />
             <div style={{ flexGrow: 1, minWidth: 0 }}>
               <div style={{ fontSize: 15, fontWeight: 600 }}>{item.title ?? item.url}</div>
             </div>

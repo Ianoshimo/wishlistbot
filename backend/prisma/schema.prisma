@@ -47,6 +47,7 @@ model Item {
   url        String
   title      String?
   price      Int? // в копейках
+  imageUrl   String? // og:image со страницы товара или прямая ссылка на картинку - см. services/linkPreview.ts
   status     ItemStatus @default(available)
 
   reservedByUserId String?
