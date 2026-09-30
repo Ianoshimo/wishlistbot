@@ -1,0 +1,101 @@
+// Модель данных под спеку итерации 1 (см. Продукт/спека-итерация-1.md).
+// Осознанно не включено: партнёрки и парсинг ссылок (итерация 2),
+// реферальная механика (итерация 3), поля под конкретный банк (итерация 4).
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model User {
+  id         String   @id @default(cuid())
+  telegramId BigInt   @unique
+  firstName  String
+  username   String?
+  createdAt  DateTime @default(now())
+
+  wishlists     Wishlist[]
+  reservations  Item[]         @relation("ReservedBy")
+  pools         Pool[]         @relation("OrganizedBy")
+  contributions Contribution[]
+}
+
+model Wishlist {
+  id        String   @id @default(cuid())
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id])
+  slug      String   @unique @default(cuid())
+  createdAt DateTime @default(now())
+
+  items Item[]
+}
+
+enum ItemStatus {
+  available
+  reserved
+  bought
+}
+
+model Item {
+  id         String     @id @default(cuid())
+  wishlistId String
+  wishlist   Wishlist   @relation(fields: [wishlistId], references: [id])
+  url        String
+  title      String?
+  price      Int? // в копейках
+  status     ItemStatus @default(available)
+
+  reservedByUserId String?
+  reservedBy       User?     @relation("ReservedBy", fields: [reservedByUserId], references: [id])
+  reservedAt       DateTime?
+  reservationTtl   DateTime? // ресёрч спеки: 5 дней от reservedAt
+
+  createdAt DateTime @default(now())
+}
+
+enum PoolStatus {
+  open
+  collected
+  expired
+}
+
+model Pool {
+  id           String     @id @default(cuid())
+  organizerId  String
+  organizer    User       @relation("OrganizedBy", fields: [organizerId], references: [id])
+  title        String // повод, например "День рождения Кати"
+  occasionDate DateTime? // дата повода - для календаря, не срок сбора
+  targetAmount Int? // в копейках, null = без цели
+  deadline     DateTime
+  status       PoolStatus @default(open)
+  createdAt    DateTime   @default(now())
+
+  contributions Contribution[]
+}
+
+enum ContributionStatus {
+  pending
+  success
+  failed
+  refunded
+}
+
+model Contribution {
+  id            String             @id @default(cuid())
+  poolId        String
+  pool          Pool               @relation(fields: [poolId], references: [id])
+  contributorId String
+  contributor   User               @relation(fields: [contributorId], references: [id])
+  amount        Int // в копейках
+  status        ContributionStatus @default(pending)
+
+  // Заполняется при подключении ЮKassa - см. Открытые вопросы в спеке
+  // (тип чека "добровольный взнос" под 54-ФЗ ещё не подтверждён).
+  yookassaPaymentId String?
+
+  createdAt DateTime @default(now())
+}
