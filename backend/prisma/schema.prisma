@@ -18,6 +18,12 @@ model User {
   username   String?
   createdAt  DateTime @default(now())
 
+  // Телефон для перевода по СБП, когда получатель отмечает позицию как
+  // "уже купил(а) сам(а)" - см. Item.selfPurchased. Хранится на User, а не
+  // на Item, потому что это реквизит человека, не конкретного подарка:
+  // один и тот же номер подставляется для всех его самостоятельных покупок.
+  sbpPhone String?
+
   wishlists     Wishlist[]
   reservations  Item[]         @relation("ReservedBy")
   pools         Pool[]         @relation("OrganizedBy")
@@ -49,6 +55,11 @@ model Item {
   price      Int? // в копейках
   imageUrl   String? // og:image со страницы товара или прямая ссылка на картинку - см. services/linkPreview.ts
   status     ItemStatus @default(available)
+
+  // Получатель уже купил подарок сам и хочет деньгами обратно по СБП,
+  // вместо похода дарителя в магазин - см. User.sbpPhone и
+  // routes/items.ts (отдаёт номер телефона только после брони).
+  selfPurchased Boolean @default(false)
 
   reservedByUserId String?
   reservedBy       User?     @relation("ReservedBy", fields: [reservedByUserId], references: [id])

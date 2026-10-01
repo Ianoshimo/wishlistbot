@@ -180,6 +180,9 @@ export function MyWishlist() {
                       {(item.price / 100).toFixed(0)} ₽
                     </div>
                   )}
+                  {item.selfPurchased && (
+                    <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>Уже куплено · перевод по СБП</div>
+                  )}
                 </div>
                 <StatusBadge status={item.status} />
               </div>

@@ -16,6 +16,20 @@ export async function itemRoutes(app: FastifyInstance) {
   app.get("/api/items/:itemId", async (req, reply) => {
     const { itemId } = z.object({ itemId: z.string() }).parse(req.params);
     const item = await resolveExpiredReservation(itemId);
+
+    // Номер телефона получателя отдаём только после брони (см. п.5 в
+    // задаче) - до этого момента дарителю ещё нечего переводить, а до
+    // решения "беру" номер превращать телефон в выдаваемую-всем-подряд-
+    // по-ссылке строку нет смысла.
+    let sbpPhone: string | null = null;
+    if (item.selfPurchased && item.status !== "available") {
+      const wishlist = await db.wishlist.findUnique({
+        where: { id: item.wishlistId },
+        select: { owner: { select: { sbpPhone: true } } },
+      });
+      sbpPhone = wishlist?.owner.sbpPhone ?? null;
+    }
+
     return {
       id: item.id,
       url: item.url,
@@ -23,6 +37,8 @@ export async function itemRoutes(app: FastifyInstance) {
       price: item.price,
       imageUrl: item.imageUrl,
       status: item.status,
+      selfPurchased: item.selfPurchased,
+      sbpPhone,
     };
   });
 

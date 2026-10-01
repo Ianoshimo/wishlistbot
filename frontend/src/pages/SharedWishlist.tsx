@@ -109,6 +109,9 @@ export function SharedWishlist() {
             <Thumbnail src={item.imageUrl} />
             <div style={{ flexGrow: 1, minWidth: 0 }}>
               <div style={{ fontSize: 15, fontWeight: 600 }}>{item.title ?? item.url}</div>
+              {item.selfPurchased && (
+                <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>Уже куплено · перевод по СБП</div>
+              )}
             </div>
             <StatusBadge status={item.status} />
           </Link>

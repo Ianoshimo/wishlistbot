@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 export function Screen({ children }: { children: ReactNode }) {
@@ -125,6 +125,59 @@ export function Thumbnail({ src, size = 48 }: { src: string | null; size?: numbe
         background: "var(--border)",
       }}
     />
+  );
+}
+
+// Для перевода по СБП получателю нужно скопировать номер телефона и
+// комментарий (название подарка) - см. ItemDetail.tsx. navigator.clipboard
+// недоступен в части старых WebView, поэтому молча деградируем вместо
+// падения - текст всё равно виден и выделяем вручную.
+export function CopyRow({ label, value }: { label: string; value: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // см. комментарий выше
+    }
+  };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+      <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{label}</span>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "10px 12px",
+          borderRadius: 12,
+          background: "var(--bg)",
+          border: "1px solid var(--border)",
+        }}
+      >
+        <div style={{ flexGrow: 1, fontSize: 15, fontWeight: 600, overflowWrap: "anywhere" }}>{value}</div>
+        <button
+          onClick={copy}
+          style={{
+            height: 32,
+            padding: "0 10px",
+            borderRadius: 8,
+            background: "var(--accent-soft)",
+            color: "var(--accent)",
+            border: "none",
+            fontSize: 12,
+            fontWeight: 600,
+            flexShrink: 0,
+          }}
+        >
+          {copied ? "Скопировано" : "Копировать"}
+        </button>
+      </div>
+    </div>
   );
 }
 

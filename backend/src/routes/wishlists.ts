@@ -19,7 +19,14 @@ function requireTelegramId(req: FastifyRequest, bodyTelegramId: string | undefin
 // ссылке без отдельной регистрации, личность дарителя не раскрывается
 // нигде в ответах (см. serializeItem ниже).
 
-function serializeItem(item: Awaited<ReturnType<typeof db.item.findFirstOrThrow>>) {
+// sbpPhone передаётся отдельно (не берётся из item), потому что это
+// реквизит владельца вишлиста, а не самой позиции - см. User.sbpPhone в
+// schema.prisma. До брони (status === "available") номер не отдаём - см.
+// то же правило в routes/items.ts.
+function serializeItem(
+  item: Awaited<ReturnType<typeof db.item.findFirstOrThrow>>,
+  ownerSbpPhone: string | null = null,
+) {
   return {
     id: item.id,
     url: item.url,
@@ -27,12 +34,28 @@ function serializeItem(item: Awaited<ReturnType<typeof db.item.findFirstOrThrow>
     price: item.price,
     imageUrl: item.imageUrl,
     status: item.status,
+    selfPurchased: item.selfPurchased,
+    sbpPhone: item.selfPurchased && item.status !== "available" ? ownerSbpPhone : null,
     // reservedByUserId сознательно не отдаём наружу - п.2 спеки:
     // "личность дарителя не показывается никому, включая получателя".
   };
 }
 
+const PHONE_RE = /^[\d\s()+-]{10,20}$/;
+
 export async function wishlistRoutes(app: FastifyInstance) {
+  // Телефон для СБП - реквизит человека, не позиции (см. User.sbpPhone) -
+  // фронту нужно подставить уже сохранённый номер при повторной отметке
+  // "купил сам", чтобы не просить вводить его каждый раз заново.
+  app.get("/api/me", async (req, reply) => {
+    const query = z.object({ telegramId: z.string().optional() }).parse(req.query);
+    const telegramId = requireTelegramId(req, query.telegramId);
+    if (!telegramId) return reply.code(401).send({ error: "unauthorized" });
+
+    const user = await db.user.findUnique({ where: { telegramId: BigInt(telegramId) } });
+    return { sbpPhone: user?.sbpPhone ?? null };
+  });
+
   app.post("/api/wishlists", async (req, reply) => {
     const body = z.object({ telegramId: z.string().optional() }).parse(req.body);
     const telegramId = requireTelegramId(req, body.telegramId);
@@ -53,7 +76,7 @@ export async function wishlistRoutes(app: FastifyInstance) {
 
     const wishlist = await db.wishlist.findUnique({
       where: { slug },
-      include: { items: true },
+      include: { items: true, owner: true },
     });
     if (!wishlist) return reply.code(404).send({ error: "wishlist_not_found" });
 
@@ -61,7 +84,10 @@ export async function wishlistRoutes(app: FastifyInstance) {
       wishlist.items.map((i) => resolveExpiredReservation(i.id)),
     );
 
-    return { slug: wishlist.slug, items: items.map(serializeItem) };
+    return {
+      slug: wishlist.slug,
+      items: items.map((i) => serializeItem(i, wishlist.owner.sbpPhone)),
+    };
   });
 
   app.post("/api/wishlists/:slug/items", async (req, reply) => {
@@ -71,11 +97,31 @@ export async function wishlistRoutes(app: FastifyInstance) {
         url: z.string().url(),
         title: z.string().optional(),
         price: z.number().int().positive().optional(), // копейки
+        // "Уже купил(а) сам(а)" (решение 2026-10-02, по просьбе
+        // пользователя) - даритель переводит деньги напрямую получателю по
+        // СБП вместо похода в магазин, см. User.sbpPhone.
+        selfPurchased: z.boolean().optional(),
+        sbpPhone: z.string().regex(PHONE_RE, "invalid_phone").optional(),
       })
       .parse(req.body);
 
-    const wishlist = await db.wishlist.findUnique({ where: { slug } });
+    const wishlist = await db.wishlist.findUnique({ where: { slug }, include: { owner: true } });
     if (!wishlist) return reply.code(404).send({ error: "wishlist_not_found" });
+
+    // Номер нужен один раз - дальше переиспользуется для всех
+    // самостоятельных покупок этого же получателя (см. комментарий у
+    // User.sbpPhone в schema.prisma), поэтому новый присланный номер и
+    // просто "уже сохранённый" номер - равноценные источники.
+    let sbpPhone: string | undefined;
+    if (body.selfPurchased) {
+      sbpPhone = body.sbpPhone ?? wishlist.owner.sbpPhone ?? undefined;
+      if (!sbpPhone) {
+        return reply.code(400).send({ error: "sbp_phone_required" });
+      }
+      if (body.sbpPhone && body.sbpPhone !== wishlist.owner.sbpPhone) {
+        await db.user.update({ where: { id: wishlist.ownerId }, data: { sbpPhone: body.sbpPhone } });
+      }
+    }
 
     // Автоподгрузка фото/названия по ссылке вместо ручной загрузки
     // (решение 2026-10-02, без партнёрок - см. services/linkPreview.ts).
@@ -104,7 +150,9 @@ export async function wishlistRoutes(app: FastifyInstance) {
     const item = await db.item.create({
       data: {
         wishlistId: wishlist.id,
-        ...body,
+        url: body.url,
+        price: body.price,
+        selfPurchased: body.selfPurchased ?? false,
         // Пользователь просил не голые ссылки, а названия (2026-10-02) -
         // title всегда непустой: свой ввод -> подтянутый по ссылке -> имя,
         // придуманное из самой ссылки (см. deriveNameFromUrl).
@@ -115,7 +163,7 @@ export async function wishlistRoutes(app: FastifyInstance) {
         imageUrl: preview.imageUrl ?? undefined,
       },
     });
-    return reply.code(201).send(serializeItem(item));
+    return reply.code(201).send(serializeItem(item, sbpPhone ?? null));
   });
 
   app.delete("/api/items/:itemId", async (req, reply) => {

@@ -16,6 +16,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   not_found: "Не найдено",
   validation_error: "Проверьте введённые данные",
   unauthorized: "Не удалось подтвердить вход через Telegram - перезапустите бота",
+  sbp_phone_required: "Укажите номер телефона для перевода по СБП",
 };
 
 export function describeError(err: unknown): string {
@@ -51,6 +52,10 @@ export interface Item {
   price: number | null;
   imageUrl: string | null;
   status: ItemStatus;
+  selfPurchased: boolean;
+  // Приходит только после брони (status !== "available") - см.
+  // backend/src/routes/items.ts.
+  sbpPhone: string | null;
 }
 
 export interface WishlistResponse {
@@ -81,11 +86,23 @@ export const api = {
 
   getItem: (itemId: string) => request<Item>(`/api/items/${itemId}`),
 
-  addItem: (slug: string, data: { url: string; title?: string; price?: number }) =>
+  addItem: (
+    slug: string,
+    data: { url: string; title?: string; price?: number; selfPurchased?: boolean; sbpPhone?: string },
+  ) =>
     request<Item>(`/api/wishlists/${slug}/items`, {
       method: "POST",
       body: JSON.stringify(data),
     }),
+
+  // Телефон для СБП - реквизит получателя, переиспользуется для всех его
+  // самостоятельных покупок (см. backend/src/routes/wishlists.ts) - нужен,
+  // чтобы не просить вводить его заново при каждой новой позиции.
+  getMe: () => {
+    const telegramId = getTelegramId();
+    const qs = telegramId ? `?telegramId=${telegramId}` : "";
+    return request<{ sbpPhone: string | null }>(`/api/me${qs}`);
+  },
 
   reserveItem: (itemId: string) =>
     request(`/api/items/${itemId}/reserve`, {
