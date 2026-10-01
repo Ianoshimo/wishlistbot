@@ -17,16 +17,33 @@ export interface TelegramAuthUser {
   username?: string;
 }
 
+// Временное логирование (2026-10-02) - реальный Telegram на проде
+// отвечает 401 на валидный на вид initData, причина непонятна вслепую.
+// Снять после диагностики, см. Продукт/беклог-баги-итерация-1.md.
+function debugLog(reason: string, extra?: Record<string, unknown>) {
+  console.error("[telegramAuth]", reason, extra ?? "");
+}
+
 export function verifyInitData(initData: string): TelegramAuthUser | null {
-  if (!initData) return null;
+  if (!initData) {
+    debugLog("initData пустой/отсутствует");
+    return null;
+  }
 
   const params = new URLSearchParams(initData);
   const hash = params.get("hash");
-  if (!hash) return null;
+  if (!hash) {
+    debugLog("нет поля hash", { initDataLength: initData.length, initDataSample: initData.slice(0, 200) });
+    return null;
+  }
   params.delete("hash");
 
   const authDate = Number(params.get("auth_date"));
-  if (!authDate || Date.now() / 1000 - authDate > MAX_AUTH_AGE_SECONDS) return null;
+  const ageSeconds = Date.now() / 1000 - authDate;
+  if (!authDate || ageSeconds > MAX_AUTH_AGE_SECONDS) {
+    debugLog("auth_date невалиден или устарел", { authDate, ageSeconds });
+    return null;
+  }
 
   const dataCheckString = [...params.entries()]
     .sort(([a], [b]) => a.localeCompare(b))
@@ -35,10 +52,21 @@ export function verifyInitData(initData: string): TelegramAuthUser | null {
 
   const secretKey = createHmac("sha256", "WebAppData").update(env.BOT_TOKEN).digest();
   const computedHash = createHmac("sha256", secretKey).update(dataCheckString).digest("hex");
-  if (computedHash !== hash) return null;
+  if (computedHash !== hash) {
+    debugLog("хэш не совпал", {
+      computedHash,
+      expectedHash: hash,
+      dataCheckString,
+      initDataLength: initData.length,
+    });
+    return null;
+  }
 
   const userRaw = params.get("user");
-  if (!userRaw) return null;
+  if (!userRaw) {
+    debugLog("нет поля user");
+    return null;
+  }
   const user = JSON.parse(userRaw) as { id: number; first_name: string; username?: string };
 
   return { id: String(user.id), firstName: user.first_name, username: user.username };
