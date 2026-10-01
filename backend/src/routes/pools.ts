@@ -2,6 +2,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { db } from "../db.js";
 import { telegramIdSchema } from "../auth/telegramAuth.js";
+import { upsertUserByTelegramId } from "../services/userUpsert.js";
 
 // Спека итерации 1, п.4-5: сбор без привязки к товару, полный автовозврат
 // при истечении срока, продление срока организатором.
@@ -23,11 +24,7 @@ export async function poolRoutes(app: FastifyInstance) {
       })
       .parse(req.body);
 
-    const organizer = await db.user.upsert({
-      where: { telegramId: BigInt(body.telegramId) },
-      update: {},
-      create: { telegramId: BigInt(body.telegramId), firstName: "" },
-    });
+    const organizer = await upsertUserByTelegramId(body.telegramId);
 
     const deadline = new Date();
     deadline.setDate(deadline.getDate() + body.durationDays);
@@ -97,11 +94,7 @@ export async function poolRoutes(app: FastifyInstance) {
       .object({ telegramId: z.string().regex(telegramIdSchema), amount: z.number().int().positive() })
       .parse(req.body);
 
-    const contributor = await db.user.upsert({
-      where: { telegramId: BigInt(body.telegramId) },
-      update: {},
-      create: { telegramId: BigInt(body.telegramId), firstName: "" },
-    });
+    const contributor = await upsertUserByTelegramId(body.telegramId);
 
     // TODO: интеграция с ЮKassa - см. комментарий в шапке файла.
     // Пока просто фиксируем намерение внести взнос со статусом pending,

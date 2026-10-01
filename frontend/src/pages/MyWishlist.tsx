@@ -14,6 +14,9 @@ export function MyWishlist() {
   const [wishlist, setWishlist] = useState<WishlistResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Отдельно от error (срыв начальной загрузки - на весь экран) - ошибка
+  // точечного действия (удаление) не должна заменять собой весь список.
+  const [actionError, setActionError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -49,6 +52,23 @@ export function MyWishlist() {
   if (!wishlist) return null;
 
   const boughtCount = wishlist.items.filter((i) => i.status === "bought").length;
+
+  // Беклог Н-4: бэкенд умел удалять позиции ещё с фикса Б-2, но во
+  // фронтенде не было вообще никакого способа это вызвать.
+  const deleteItem = async (itemId: string, status: string) => {
+    const message =
+      status === "available"
+        ? "Удалить эту позицию из вишлиста?"
+        : "Эта позиция уже забронирована или куплена - всё равно удалить?";
+    if (!window.confirm(message)) return;
+    setActionError(null);
+    try {
+      await api.deleteItem(itemId);
+      setWishlist((w) => (w ? { ...w, items: w.items.filter((i) => i.id !== itemId) } : w));
+    } catch (err) {
+      setActionError(describeError(err));
+    }
+  };
 
   return (
     <Screen>
@@ -106,6 +126,12 @@ export function MyWishlist() {
           </div>
         }
       />
+
+      {actionError && (
+        <div style={{ padding: "0 16px 12px" }}>
+          <ErrorBanner message={actionError} />
+        </div>
+      )}
 
       {wishlist.items.length === 0 ? (
         <div
@@ -185,6 +211,31 @@ export function MyWishlist() {
                   )}
                 </div>
                 <StatusBadge status={item.status} />
+                <button
+                  onClick={() => deleteItem(item.id, item.status)}
+                  aria-label="Удалить позицию"
+                  style={{
+                    width: 28,
+                    height: 28,
+                    flexShrink: 0,
+                    borderRadius: 8,
+                    background: "transparent",
+                    border: "none",
+                    color: "var(--text-secondary)",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                    <path
+                      d="M6 6l12 12M18 6L6 18"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </button>
               </div>
             ))}
           </div>

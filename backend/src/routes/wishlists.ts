@@ -5,6 +5,7 @@ import { resolveExpiredReservation } from "../services/reservation.js";
 import { deriveNameFromUrl, fetchLinkPreview } from "../services/linkPreview.js";
 import { fetchWildberriesViaApify, isWildberriesUrl } from "../services/wildberriesApify.js";
 import { resolveTelegramId } from "../auth/telegramAuth.js";
+import { upsertUserByTelegramId } from "../services/userUpsert.js";
 
 // Привязка логина через Telegram (2026-10-02): telegramId больше не
 // берётся из тела запроса напрямую - только из проверенной подписи
@@ -68,11 +69,18 @@ export async function wishlistRoutes(app: FastifyInstance) {
     const telegramId = requireTelegramId(req, body.telegramId);
     if (!telegramId) return reply.code(401).send({ error: "unauthorized" });
 
-    const owner = await db.user.upsert({
-      where: { telegramId: BigInt(telegramId) },
-      update: {},
-      create: { telegramId: BigInt(telegramId), firstName: "" },
-    });
+    const owner = await upsertUserByTelegramId(telegramId);
+
+    // Беклог Н-2: раньше каждый вызов создавал новый вишлист, без
+    // проверки, есть ли уже один у этого владельца - при потере
+    // localStorage на клиенте (переустановка, автоочистка WebView)
+    // следующий вход молча плодил новый пустой вишлист, старый с уже
+    // добавленными позициями оставался недостижим ни через UI, ни через
+    // API. Теперь находим и возвращаем существующий вместо нового.
+    const existing = await db.wishlist.findFirst({ where: { ownerId: owner.id } });
+    if (existing) {
+      return reply.code(200).send({ id: existing.id, slug: existing.slug });
+    }
 
     const wishlist = await db.wishlist.create({ data: { ownerId: owner.id } });
     return reply.code(201).send({ id: wishlist.id, slug: wishlist.slug });
@@ -82,9 +90,12 @@ export async function wishlistRoutes(app: FastifyInstance) {
     const { slug } = z.object({ slug: z.string() }).parse(req.params);
     const query = z.object({ telegramId: z.string().optional() }).parse(req.query);
 
+    // Беклог Н-8: без явного orderBy Postgres не гарантирует порядок
+    // строк - список позиций мог отображаться в разном порядке между
+    // запросами к одной и той же странице.
     const wishlist = await db.wishlist.findUnique({
       where: { slug },
-      include: { items: true, owner: true },
+      include: { items: { orderBy: { createdAt: "asc" } }, owner: true },
     });
     if (!wishlist) return reply.code(404).send({ error: "wishlist_not_found" });
 

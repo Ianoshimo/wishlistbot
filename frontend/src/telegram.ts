@@ -29,8 +29,16 @@ declare global {
 
 const webApp = window.Telegram?.WebApp;
 
+// Беклог Н-7 (полный QA-прогон 2026-10-01): скрипт telegram-web-app.js
+// безусловно создаёт window.Telegram.WebApp даже вне настоящего Telegram
+// (заглушка) - поэтому проверка "есть ли webApp" сама по себе не отличает
+// реальный клиент от обычного браузера. initData у заглушки всегда
+// пустая строка, у настоящего Telegram - всегда непустая (см. тот же
+// принцип уже в getTelegramId/getInitData ниже).
+const isRealTelegram = Boolean(webApp?.initData);
+
 export function initTelegram() {
-  if (!webApp) {
+  if (!webApp || !isRealTelegram) {
     // Локальная разработка вне Телеграма - используем системную тему как
     // приближение, чтобы вёрстка была видна без реального клиента.
     const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;

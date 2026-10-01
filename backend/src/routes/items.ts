@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "../db.js";
 import { reservationDeadline, resolveExpiredReservation } from "../services/reservation.js";
 import { resolveTelegramId, telegramIdSchema } from "../auth/telegramAuth.js";
+import { upsertUserByTelegramId } from "../services/userUpsert.js";
 
 function requireTelegramId(req: FastifyRequest, bodyTelegramId: string | undefined): string | null {
   const initData = req.headers["x-telegram-init-data"];
@@ -82,11 +83,7 @@ export async function itemRoutes(app: FastifyInstance) {
       return reply.code(403).send({ error: "cannot_reserve_own_item" });
     }
 
-    const user = await db.user.upsert({
-      where: { telegramId: BigInt(telegramId) },
-      update: {},
-      create: { telegramId: BigInt(telegramId), firstName: "" },
-    });
+    const user = await upsertUserByTelegramId(telegramId);
 
     // Беклог Б-5: между чтением статуса выше и этой записью мог успеть
     // проскочить параллельный запрос - поэтому статус проверяется прямо в

@@ -129,6 +129,14 @@ export const api = {
       body: JSON.stringify({ telegramId: getTelegramId() }),
     }),
 
+  // Беклог Н-4: бэкенд (DELETE /api/items/:itemId) был реализован и
+  // авторизован ещё при фиксе Б-2, но во фронтенде не было вызова вообще.
+  deleteItem: (itemId: string) =>
+    request(`/api/items/${itemId}`, {
+      method: "DELETE",
+      body: JSON.stringify({ telegramId: getTelegramId() }),
+    }),
+
   createPool: (data: {
     title: string;
     occasionDate?: string;
