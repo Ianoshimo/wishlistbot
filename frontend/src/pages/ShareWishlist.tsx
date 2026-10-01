@@ -20,7 +20,7 @@ export function ShareWishlist() {
     <Screen>
       <Header title="Поделиться" backTo={`/w/${slug}`} />
       <div style={{ padding: 28, display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
-        <div style={{ fontSize: 18, fontWeight: 700 }}>Вишлист готов</div>
+        <div className="font-display" style={{ fontSize: 18, fontWeight: 700 }}>Вишлист готов</div>
         <div style={{ fontSize: 14, color: "var(--text-secondary)", textAlign: "center", maxWidth: 280 }}>
           Отправьте ссылку друзьям - они увидят список и смогут забронировать подарок
         </div>

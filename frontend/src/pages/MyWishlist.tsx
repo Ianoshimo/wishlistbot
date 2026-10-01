@@ -146,7 +146,7 @@ export function MyWishlist() {
             textAlign: "center",
           }}
         >
-          <div style={{ fontSize: 18, fontWeight: 700 }}>Пока пусто</div>
+          <div className="font-display" style={{ fontSize: 18, fontWeight: 700 }}>Пока пусто</div>
           <div style={{ fontSize: 14, color: "var(--text-secondary)", maxWidth: 260 }}>
             Добавьте ссылку на первый подарок - и друзья увидят, что вам подарить
           </div>

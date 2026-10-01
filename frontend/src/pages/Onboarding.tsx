@@ -22,7 +22,7 @@ export function Onboarding({ onStart }: { onStart: () => void }) {
           textAlign: "center",
         }}
       >
-        <div style={{ fontSize: 20, fontWeight: 800 }}>Вишлист-бот</div>
+        <div className="font-display" style={{ fontSize: 20, fontWeight: 700 }}>Вишлист-бот</div>
         <div style={{ fontSize: 14, color: "var(--text-secondary)" }}>Дарите не гадая</div>
 
         <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 10, marginTop: 12, textAlign: "left" }}>

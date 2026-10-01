@@ -57,7 +57,7 @@ export function SharedWishlist() {
             textAlign: "center",
           }}
         >
-          <div style={{ fontSize: 18, fontWeight: 700 }}>Вас пригласили</div>
+          <div className="font-display" style={{ fontSize: 18, fontWeight: 700 }}>Вас пригласили</div>
           <div style={{ fontSize: 14, color: "var(--text-secondary)", maxWidth: 280 }}>
             Можно посмотреть вишлист и забронировать подарок, чтобы не задвоить с другими
           </div>

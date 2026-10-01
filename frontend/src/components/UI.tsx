@@ -53,7 +53,7 @@ export function Header({
           </svg>
         </Link>
       )}
-      <div style={{ flexGrow: 1, fontSize: 17, fontWeight: 700 }}>{title}</div>
+      <div className="font-display" style={{ flexGrow: 1, fontSize: 17, fontWeight: 700 }}>{title}</div>
       {action}
     </div>
   );

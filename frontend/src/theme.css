@@ -1,39 +1,47 @@
-/* Токены перенесены из дизайн-макета (Продукт/, артефакт "экраны итерации 1"),
-   чтобы код и макет не расходились по цвету. Тема переключается атрибутом
-   data-theme на <html> - см. src/telegram.ts, значение приходит от
-   Telegram.WebApp.colorScheme, а не ручным тумблером как в макете. */
+/* Редизайн "Электрик" (2026-10-01) - индиго + лайм вместо нейтрального
+   финтех-синего, согласовано пользователем по 4 вариантам палитры
+   (черновик - https://claude.ai/artifact/ACuDaDGYP8XDcQF8z3rc7T).
+   Тема по-прежнему переключается атрибутом data-theme на <html> - см.
+   src/telegram.ts, значение приходит от Telegram.WebApp.colorScheme, а
+   не ручным тумблером. */
 
 :root,
 :root[data-theme="light"] {
-  --bg: #f2f2f7;
+  --bg: #f5f4fb;
   --surface: #ffffff;
-  --border: #e3e6e8;
-  --text-primary: #0b0b0d;
-  --text-secondary: #7d7d82;
-  --accent: #2f89ec;
-  --accent-soft: rgba(47, 137, 236, 0.1);
-  --success: #279c46;
-  --success-soft: rgba(39, 156, 70, 0.1);
-  --warning: #b9770e;
-  --warning-soft: rgba(185, 119, 14, 0.12);
-  --danger: #d6362a;
-  --danger-soft: rgba(214, 54, 42, 0.1);
+  --border: #e3dff2;
+  --text-primary: #1b1730;
+  --text-secondary: #6b648c;
+  --accent: #4d3e99;
+  --accent-soft: rgba(77, 62, 153, 0.1);
+  --success: #3e8f7a;
+  --success-soft: rgba(62, 143, 122, 0.14);
+  --warning: #d98a3d;
+  --warning-soft: rgba(217, 138, 61, 0.16);
+  --danger: #a83d5c;
+  --danger-soft: rgba(168, 61, 92, 0.1);
+  /* Лайм - только для одного "особого" момента на экране (прогресс,
+     акцентная кнопка), не для общего accent - см. черновик. */
+  --highlight: #9aad2e;
+  --highlight-soft: rgba(196, 224, 90, 0.25);
 }
 
 :root[data-theme="dark"] {
-  --bg: #0f1621;
-  --surface: #1c2733;
-  --border: #2b3947;
-  --text-primary: #ffffff;
-  --text-secondary: #8b98a5;
-  --accent: #4ea1f0;
-  --accent-soft: rgba(78, 161, 240, 0.16);
-  --success: #3ecf5d;
-  --success-soft: rgba(62, 207, 93, 0.16);
-  --warning: #ffb340;
-  --warning-soft: rgba(255, 179, 64, 0.16);
-  --danger: #ff453a;
-  --danger-soft: rgba(255, 69, 58, 0.16);
+  --bg: #15111f;
+  --surface: #211a35;
+  --border: rgba(242, 240, 250, 0.1);
+  --text-primary: #f2f0fa;
+  --text-secondary: #9c94b8;
+  --accent: #8a7ae0;
+  --accent-soft: rgba(138, 122, 224, 0.18);
+  --success: #6fd1b0;
+  --success-soft: rgba(111, 209, 176, 0.18);
+  --warning: #e8a563;
+  --warning-soft: rgba(217, 138, 61, 0.2);
+  --danger: #d97c98;
+  --danger-soft: rgba(168, 61, 92, 0.22);
+  --highlight: #c4e05a;
+  --highlight-soft: rgba(196, 224, 90, 0.18);
 }
 
 * {
@@ -46,6 +54,13 @@ body {
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background: var(--bg);
   color: var(--text-primary);
+}
+
+/* Space Grotesk - только заголовки/крупные числа (см. index.html для
+   подключения шрифта), текст интерфейса остаётся системным - это
+   по-прежнему веб внутри Telegram, не отдельный бренд-сайт. */
+.font-display {
+  font-family: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 a {
