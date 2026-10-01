@@ -80,6 +80,8 @@ const MARKETPLACE_NAMES: Record<string, string> = {
   "wildberries.ru": "Wildberries",
   "market.yandex.ru": "Яндекс.Маркет",
   "avito.ru": "Авито",
+  "aliexpress.ru": "AliExpress",
+  "aliexpress.com": "AliExpress",
 };
 
 // Когда страницу товара не удалось прочитать (антибот-блок - см. шапку
