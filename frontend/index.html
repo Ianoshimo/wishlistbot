@@ -14,14 +14,27 @@
       // пользователь видит голый фон темы и ничего больше - непонятно,
       // в чём дело. Этот блок ничего не меняет в самом приложении, только
       // показывает текст ошибки прямо на экране вместо пустоты.
+      window.__bootStarted = false;
       (function () {
         var errors = [];
         function report(msg) {
           errors.push(String(msg));
         }
-        window.addEventListener("error", function (e) {
-          report((e.error && e.error.stack) || e.message);
-        });
+        // true в третьем аргументе - фаза перехвата: только так ловятся
+        // ошибки ЗАГРУЗКИ ресурсов (скрипт/стиль не скачался), в отличие
+        // от ошибок ВЫПОЛНЕНИЯ кода - первый прогон диагностики их не видел
+        // именно поэтому.
+        window.addEventListener(
+          "error",
+          function (e) {
+            if (e.target && e.target !== window) {
+              report("Ресурс не загрузился: " + (e.target.src || e.target.href || e.target.tagName));
+            } else {
+              report((e.error && e.error.stack) || e.message);
+            }
+          },
+          true,
+        );
         window.addEventListener("unhandledrejection", function (e) {
           report((e.reason && e.reason.stack) || e.reason);
         });
@@ -29,11 +42,21 @@
           var root = document.getElementById("root");
           if (root && root.childNodes.length > 0) return;
           var tg = window.Telegram && window.Telegram.WebApp;
+          var scripts = performance
+            .getEntriesByType("resource")
+            .filter(function (r) {
+              return /\.(js|css)$/.test(r.name);
+            })
+            .map(function (r) {
+              return r.name.split("/").pop() + ": " + (r.transferSize || 0) + " байт, " + Math.round(r.duration) + "мс";
+            });
           var info = [
             "Экран пуст - диагностика:",
+            "Бандл начал выполняться: " + window.__bootStarted,
             "initData есть: " + (tg ? String(!!tg.initData) : "Telegram.WebApp нет"),
             "UA: " + navigator.userAgent,
-            errors.length ? "Ошибки:\n" + errors.join("\n---\n") : "Ошибок в консоли не поймано (похоже, просто не загрузилось)",
+            "Ресурсы (js/css):\n" + (scripts.length ? scripts.join("\n") : "ни одного не замечено performance API"),
+            errors.length ? "Ошибки:\n" + errors.join("\n---\n") : "Ошибок не поймано",
           ].join("\n\n");
           var pre = document.createElement("pre");
           pre.style.cssText =
