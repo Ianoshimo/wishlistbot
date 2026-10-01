@@ -1,4 +1,4 @@
-import { HashRouter, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Home } from "./pages/Home";
 import { AddItem } from "./pages/AddItem";
 import { ShareWishlist } from "./pages/ShareWishlist";
@@ -18,7 +18,7 @@ import { CalendarOrganizer } from "./pages/CalendarOrganizer";
 // заглушка не заведена - см. комментарий в Home.tsx.
 export function App() {
   return (
-    <HashRouter>
+    <BrowserRouter>
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/w/:slug" element={<SharedWishlist />} />
@@ -33,6 +33,6 @@ export function App() {
         <Route path="/calendar/giver" element={<CalendarGiver />} />
         <Route path="/calendar/organizer" element={<CalendarOrganizer />} />
       </Routes>
-    </HashRouter>
+    </BrowserRouter>
   );
 }
