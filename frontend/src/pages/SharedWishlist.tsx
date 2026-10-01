@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import { api, describeError, type WishlistResponse } from "../api";
 import { ErrorBanner, Header, Screen, StatusBadge, Thumbnail } from "../components/UI";
 
@@ -14,6 +14,7 @@ function seenKey(slug: string) {
 
 export function SharedWishlist() {
   const { slug = "" } = useParams();
+  const navigate = useNavigate();
   const [wishlist, setWishlist] = useState<WishlistResponse | null>(null);
   const [showInvite, setShowInvite] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,6 +26,16 @@ export function SharedWishlist() {
       .then(setWishlist)
       .catch((err) => setError(describeError(err)));
   }, [slug]);
+
+  // Беклог В-10: получатель, открывший свою же ссылку "Поделиться" (из
+  // любопытства - проверить, как выглядит у друзей), видел экран
+  // приглашения "чужого" человека - редиректим на свой редактируемый
+  // вишлист вместо read-only чужого вида.
+  useEffect(() => {
+    if (wishlist?.isOwner) {
+      navigate("/", { replace: true });
+    }
+  }, [wishlist, navigate]);
 
   const openList = () => {
     localStorage.setItem(seenKey(slug), "1");
@@ -83,7 +94,7 @@ export function SharedWishlist() {
     );
   }
 
-  if (!wishlist) return null;
+  if (!wishlist || wishlist.isOwner) return null;
 
   return (
     <Screen>

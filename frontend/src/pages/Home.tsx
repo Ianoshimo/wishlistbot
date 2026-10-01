@@ -9,7 +9,12 @@ import { Onboarding } from "./Onboarding";
 // показываем Onboarding (спека, п.6), а не сразу пустой список.
 export function Home() {
   const navigate = useNavigate();
-  const [showOnboarding, setShowOnboarding] = useState(false);
+  // Беклог В-7: при useState(false) первый рендер отдавал <MyWishlist/>,
+  // её эффект (дочерний, выполняется раньше родительского) успевал
+  // дёрнуть POST /api/wishlists до того, как этот эффект решал показать
+  // Onboarding - в БД оставался "осиротевший" вишлист. Ленивый
+  // инициализатор решает это синхронно, на первом же рендере.
+  const [showOnboarding, setShowOnboarding] = useState(() => !localStorage.getItem(MY_SLUG_KEY));
 
   useEffect(() => {
     const param = getStartParam();
@@ -19,9 +24,7 @@ export function Home() {
     }
     if (param?.startsWith("p_")) {
       navigate(`/p/${param.slice(2)}`, { replace: true });
-      return;
     }
-    setShowOnboarding(!localStorage.getItem(MY_SLUG_KEY));
   }, [navigate]);
 
   if (showOnboarding) {

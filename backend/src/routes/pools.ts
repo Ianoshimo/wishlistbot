@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { db } from "../db.js";
+import { telegramIdSchema } from "../auth/telegramAuth.js";
 
 // Спека итерации 1, п.4-5: сбор без привязки к товару, полный автовозврат
 // при истечении срока, продление срока организатором.
@@ -14,7 +15,7 @@ export async function poolRoutes(app: FastifyInstance) {
   app.post("/api/pools", async (req, reply) => {
     const body = z
       .object({
-        telegramId: z.string(),
+        telegramId: z.string().regex(telegramIdSchema),
         title: z.string().min(1),
         occasionDate: z.string().datetime().optional(),
         targetAmount: z.number().int().positive().optional(), // копейки
@@ -47,7 +48,7 @@ export async function poolRoutes(app: FastifyInstance) {
   app.get("/api/pools/:id", async (req, reply) => {
     const { id } = z.object({ id: z.string() }).parse(req.params);
     const { telegramId } = z
-      .object({ telegramId: z.string().optional() })
+      .object({ telegramId: z.string().regex(telegramIdSchema).optional() })
       .parse(req.query);
 
     const pool = await db.pool.findUnique({
@@ -93,7 +94,7 @@ export async function poolRoutes(app: FastifyInstance) {
   app.post("/api/pools/:id/contribute", async (req, reply) => {
     const { id } = z.object({ id: z.string() }).parse(req.params);
     const body = z
-      .object({ telegramId: z.string(), amount: z.number().int().positive() })
+      .object({ telegramId: z.string().regex(telegramIdSchema), amount: z.number().int().positive() })
       .parse(req.body);
 
     const contributor = await db.user.upsert({

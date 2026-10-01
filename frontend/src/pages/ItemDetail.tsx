@@ -80,8 +80,13 @@ export function ItemDetail() {
 
         {item.status === "reserved" && (
           <>
+            {/* Беклог В-6: раньше писали "вами" безусловно - получатель
+                на своей же позиции тоже это видел. Текст нейтральный для
+                всех, кроме реального держателя брони. */}
             <div style={{ padding: 14, borderRadius: 14, background: "var(--warning-soft)", color: "var(--warning)", fontSize: 13 }}>
-              Забронировано вами · снимется через 5 дней, если не отметить {item.selfPurchased ? "перевод" : "покупку"}
+              {item.reservedByMe
+                ? `Забронировано вами · снимется через 5 дней, если не отметить ${item.selfPurchased ? "перевод" : "покупку"}`
+                : "Уже забронировано"}
             </div>
 
             {item.selfPurchased ? (
@@ -122,7 +127,7 @@ export function ItemDetail() {
             {item.selfPurchased ? "Перевести деньгами" : "Забронировать"}
           </PrimaryButton>
         )}
-        {item.status === "reserved" && (
+        {item.status === "reserved" && item.reservedByMe && (
           <PrimaryButton onClick={markBought} style={{ width: "100%" }}>
             {item.selfPurchased ? "Деньги отправлены" : "Отметить купленным"}
           </PrimaryButton>

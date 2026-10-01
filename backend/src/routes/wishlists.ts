@@ -73,6 +73,7 @@ export async function wishlistRoutes(app: FastifyInstance) {
 
   app.get("/api/wishlists/:slug", async (req, reply) => {
     const { slug } = z.object({ slug: z.string() }).parse(req.params);
+    const query = z.object({ telegramId: z.string().optional() }).parse(req.query);
 
     const wishlist = await db.wishlist.findUnique({
       where: { slug },
@@ -80,12 +81,20 @@ export async function wishlistRoutes(app: FastifyInstance) {
     });
     if (!wishlist) return reply.code(404).send({ error: "wishlist_not_found" });
 
+    // Беклог В-10: получатель, открывший свою же ссылку "Поделиться",
+    // видел экран приглашения "чужого" человека - фронт не знал, что это
+    // его собственный список. Личность не определена (аноним) -> false,
+    // не 401 - просмотр по ссылке должен остаться анонимным.
+    const telegramId = requireTelegramId(req, query.telegramId);
+    const isOwner = Boolean(telegramId && wishlist.owner.telegramId === BigInt(telegramId));
+
     const items = await Promise.all(
       wishlist.items.map((i) => resolveExpiredReservation(i.id)),
     );
 
     return {
       slug: wishlist.slug,
+      isOwner,
       items: items.map((i) => serializeItem(i, wishlist.owner.sbpPhone)),
     };
   });

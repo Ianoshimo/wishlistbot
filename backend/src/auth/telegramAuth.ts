@@ -17,6 +17,11 @@ export interface TelegramAuthUser {
   username?: string;
 }
 
+// Беклог В-9: BigInt("") === 0n в JS, не ошибка - пустой telegramId
+// схлопывал разных клиентов в одного пользователя с telegramId=0,
+// нечисловая строка валила необработанное исключение -> 500.
+export const telegramIdSchema = /^\d+$/;
+
 // Временное логирование (2026-10-02) - реальный Telegram на проде
 // отвечает 401 на валидный на вид initData, причина непонятна вслепую.
 // Снять после диагностики, см. Продукт/беклог-баги-итерация-1.md.
@@ -84,6 +89,8 @@ export function resolveTelegramId(
 ): string | null {
   const verified = initData ? verifyInitData(initData) : null;
   if (verified) return verified.id;
-  if (env.ALLOW_DEV_TELEGRAM_ID && bodyTelegramId) return bodyTelegramId;
+  if (env.ALLOW_DEV_TELEGRAM_ID && bodyTelegramId && telegramIdSchema.test(bodyTelegramId)) {
+    return bodyTelegramId;
+  }
   return null;
 }

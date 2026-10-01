@@ -56,10 +56,16 @@ export interface Item {
   // Приходит только после брони (status !== "available") - см.
   // backend/src/routes/items.ts.
   sbpPhone: string | null;
+  // Беклог В-6: true только если бронь принадлежит текущему telegramId -
+  // identity дарителя при этом наружу не раскрывается.
+  reservedByMe: boolean;
 }
 
 export interface WishlistResponse {
   slug: string;
+  // Беклог В-10: получатель, открывший свою же ссылку "Поделиться", не
+  // должен видеть экран приглашения "чужого" человека.
+  isOwner: boolean;
   items: Item[];
 }
 
@@ -81,10 +87,17 @@ export const api = {
       body: JSON.stringify({ telegramId: getTelegramId() }),
     }),
 
-  getWishlist: (slug: string) =>
-    request<WishlistResponse>(`/api/wishlists/${slug}`),
+  getWishlist: (slug: string) => {
+    const telegramId = getTelegramId();
+    const qs = telegramId ? `?telegramId=${telegramId}` : "";
+    return request<WishlistResponse>(`/api/wishlists/${slug}${qs}`);
+  },
 
-  getItem: (itemId: string) => request<Item>(`/api/items/${itemId}`),
+  getItem: (itemId: string) => {
+    const telegramId = getTelegramId();
+    const qs = telegramId ? `?telegramId=${telegramId}` : "";
+    return request<Item>(`/api/items/${itemId}${qs}`);
+  },
 
   addItem: (
     slug: string,

@@ -2,7 +2,7 @@ import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { db } from "../db.js";
 import { reservationDeadline, resolveExpiredReservation } from "../services/reservation.js";
-import { resolveTelegramId } from "../auth/telegramAuth.js";
+import { resolveTelegramId, telegramIdSchema } from "../auth/telegramAuth.js";
 
 function requireTelegramId(req: FastifyRequest, bodyTelegramId: string | undefined): string | null {
   const initData = req.headers["x-telegram-init-data"];
@@ -15,7 +15,23 @@ function requireTelegramId(req: FastifyRequest, bodyTelegramId: string | undefin
 export async function itemRoutes(app: FastifyInstance) {
   app.get("/api/items/:itemId", async (req, reply) => {
     const { itemId } = z.object({ itemId: z.string() }).parse(req.params);
+    const { telegramId: queryTelegramId } = z
+      .object({ telegramId: z.string().regex(telegramIdSchema).optional() })
+      .parse(req.query);
     const item = await resolveExpiredReservation(itemId);
+
+    // Беклог В-6: раньше фронт считал бронь "своей" безусловно при
+    // status === "reserved" - получатель на своей же позиции тоже видел
+    // "Забронировано вами". reservedByUserId наружу по-прежнему не
+    // отдаём (анонимность дарителя) - только булево сравнение.
+    let reservedByMe = false;
+    if (item.reservedByUserId) {
+      const telegramId = requireTelegramId(req, queryTelegramId);
+      if (telegramId) {
+        const user = await db.user.findUnique({ where: { telegramId: BigInt(telegramId) } });
+        reservedByMe = user?.id === item.reservedByUserId;
+      }
+    }
 
     // Номер телефона получателя отдаём только после брони (см. п.5 в
     // задаче) - до этого момента дарителю ещё нечего переводить, а до
@@ -39,6 +55,7 @@ export async function itemRoutes(app: FastifyInstance) {
       status: item.status,
       selfPurchased: item.selfPurchased,
       sbpPhone,
+      reservedByMe,
     };
   });
 
