@@ -19,7 +19,31 @@
       // в чём дело. Этот блок ничего не меняет в самом приложении, только
       // показывает текст ошибки прямо на экране вместо пустоты.
       window.__bootStarted = false;
+      window.__fetchLog = [];
       (function () {
+        // Перехватываем fetch ДО того, как main.tsx вообще загрузится -
+        // единственный надёжный способ увидеть, попыталось ли приложение
+        // вообще достучаться до API, независимо от того, что говорит
+        // Performance API (там не видно ещё не завершившихся запросов).
+        var originalFetch = window.fetch;
+        window.fetch = function (input, init) {
+          var url = typeof input === "string" ? input : input && input.url;
+          var entry = { url: url, startedAt: Date.now(), status: "pending" };
+          window.__fetchLog.push(entry);
+          return originalFetch.apply(this, arguments).then(
+            function (res) {
+              entry.status = res.status;
+              entry.ms = Date.now() - entry.startedAt;
+              return res;
+            },
+            function (err) {
+              entry.status = "error: " + (err && err.message);
+              entry.ms = Date.now() - entry.startedAt;
+              throw err;
+            },
+          );
+        };
+
         var errors = [];
         function report(msg) {
           errors.push(String(msg));
@@ -54,12 +78,20 @@
             .map(function (r) {
               return r.name.split("/").pop() + ": " + (r.transferSize || 0) + " байт, " + Math.round(r.duration) + "мс";
             });
+          var fetches = window.__fetchLog
+            .map(function (f) {
+              return f.url + " -> " + f.status + (f.ms != null ? " (" + f.ms + "мс)" : " (ещё не завершился)");
+            })
+            .join("\n");
           var info = [
             "Экран пуст - диагностика:",
             "Бандл начал выполняться: " + window.__bootStarted,
+            "location.hash: " + location.hash,
+            "start_param: " + (tg && tg.initDataUnsafe ? tg.initDataUnsafe.start_param : "-"),
             "initData есть: " + (tg ? String(!!tg.initData) : "Telegram.WebApp нет"),
             "UA: " + navigator.userAgent,
             "Ресурсы (js/css):\n" + (scripts.length ? scripts.join("\n") : "ни одного не замечено performance API"),
+            "fetch-запросы:\n" + (fetches || "ни одного fetch не было вызвано вообще"),
             errors.length ? "Ошибки:\n" + errors.join("\n---\n") : "Ошибок не поймано",
           ].join("\n\n");
           var pre = document.createElement("pre");
