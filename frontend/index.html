@@ -8,6 +8,41 @@
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      // Диагностика пустого экрана внутри Telegram (2026-10-02): если
+      // приложение падает до того, как React успевает что-то отрисовать,
+      // пользователь видит голый фон темы и ничего больше - непонятно,
+      // в чём дело. Этот блок ничего не меняет в самом приложении, только
+      // показывает текст ошибки прямо на экране вместо пустоты.
+      (function () {
+        var errors = [];
+        function report(msg) {
+          errors.push(String(msg));
+        }
+        window.addEventListener("error", function (e) {
+          report((e.error && e.error.stack) || e.message);
+        });
+        window.addEventListener("unhandledrejection", function (e) {
+          report((e.reason && e.reason.stack) || e.reason);
+        });
+        setTimeout(function () {
+          var root = document.getElementById("root");
+          if (root && root.childNodes.length > 0) return;
+          var tg = window.Telegram && window.Telegram.WebApp;
+          var info = [
+            "Экран пуст - диагностика:",
+            "initData есть: " + (tg ? String(!!tg.initData) : "Telegram.WebApp нет"),
+            "UA: " + navigator.userAgent,
+            errors.length ? "Ошибки:\n" + errors.join("\n---\n") : "Ошибок в консоли не поймано (похоже, просто не загрузилось)",
+          ].join("\n\n");
+          var pre = document.createElement("pre");
+          pre.style.cssText =
+            "padding:16px;margin:0;white-space:pre-wrap;word-break:break-word;font-size:12px;color:#fff;background:#111;min-height:100vh;box-sizing:border-box;";
+          pre.textContent = info;
+          document.body.appendChild(pre);
+        }, 4000);
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
