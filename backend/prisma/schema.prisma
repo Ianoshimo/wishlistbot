@@ -24,6 +24,14 @@ model User {
   // один и тот же номер подставляется для всех его самостоятельных покупок.
   sbpPhone String?
 
+  // Беклог Б-15: ICS-фид раньше искал пользователя прямо по telegramId -
+  // он не секрет (виден в Telegram-группах/URL профиля), значит чужой
+  // календарь можно было скачать, просто подставив чужой id. Фид - обычный
+  // URL, который периодически дёргает внешнее приложение календаря, поэтому
+  // initData-авторизация (как у остальных роутов) здесь не подходит - нужен
+  // долгоживущий секрет в самом URL.
+  calendarToken String @unique @default(cuid())
+
   wishlists     Wishlist[]
   reservations  Item[]         @relation("ReservedBy")
   pools         Pool[]         @relation("OrganizedBy")

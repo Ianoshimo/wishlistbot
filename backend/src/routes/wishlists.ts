@@ -94,7 +94,12 @@ export async function wishlistRoutes(app: FastifyInstance) {
     const { slug } = z.object({ slug: z.string() }).parse(req.params);
     const body = z
       .object({
-        url: z.string().url(),
+        telegramId: z.string().optional(),
+        // Беклог Б-8: z.string().url() считает "javascript:alert(1)"
+        // валидным URL (валиден синтаксически, схема не ограничена) -
+        // ограничиваем до http(s), иначе значение долетает до href кнопки
+        // "Перейти в магазин" с target="_blank".
+        url: z.string().url().regex(/^https?:\/\//i, "invalid_url_scheme"),
         title: z.string().optional(),
         price: z.number().int().positive().optional(), // копейки
         // "Уже купил(а) сам(а)" (решение 2026-10-02, по просьбе
@@ -105,8 +110,18 @@ export async function wishlistRoutes(app: FastifyInstance) {
       })
       .parse(req.body);
 
+    const telegramId = requireTelegramId(req, body.telegramId);
+    if (!telegramId) return reply.code(401).send({ error: "unauthorized" });
+
     const wishlist = await db.wishlist.findUnique({ where: { slug }, include: { owner: true } });
     if (!wishlist) return reply.code(404).send({ error: "wishlist_not_found" });
+
+    // Беклог Б-14: эндпоинт раньше не проверял вообще никого - любой, кто
+    // знает slug (а slug расшаривается дарителям), мог молча добавить
+    // позиции в чужой вишлист. Добавлять позиции может только владелец.
+    if (wishlist.owner.telegramId !== BigInt(telegramId)) {
+      return reply.code(403).send({ error: "not_your_wishlist" });
+    }
 
     // Номер нужен один раз - дальше переиспользуется для всех
     // самостоятельных покупок этого же получателя (см. комментарий у

@@ -14,13 +14,14 @@ function toIcsDate(d: Date) {
 }
 
 export async function calendarRoutes(app: FastifyInstance) {
-  app.get("/api/calendar/:telegramId.ics", async (req, reply) => {
-    const { telegramId } = z
-      .object({ telegramId: z.string() })
-      .parse(req.params);
+  // Беклог Б-15: раньше путь был /:telegramId.ics - telegramId не секрет,
+  // значит чужой календарь можно было скачать, просто подставив чужой id.
+  // Теперь путь - случайный токен (User.calendarToken), а не telegramId.
+  app.get("/api/calendar/:token.ics", async (req, reply) => {
+    const { token } = z.object({ token: z.string() }).parse(req.params);
 
     const user = await db.user.findUnique({
-      where: { telegramId: BigInt(telegramId) },
+      where: { calendarToken: token },
     });
     if (!user) return reply.code(404).send({ error: "user_not_found" });
 

@@ -92,7 +92,7 @@ export const api = {
   ) =>
     request<Item>(`/api/wishlists/${slug}/items`, {
       method: "POST",
-      body: JSON.stringify(data),
+      body: JSON.stringify({ ...data, telegramId: getTelegramId() }),
     }),
 
   // Телефон для СБП - реквизит получателя, переиспользуется для всех его

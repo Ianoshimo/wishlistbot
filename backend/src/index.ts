@@ -26,7 +26,11 @@ app.setErrorHandler((error, req, reply) => {
   return reply.code(500).send({ error: "internal_error" });
 });
 
-await app.register(cors, { origin: true });
+// Беклог Б-14 (Продукт/беклог-баги-итерация-1.md): origin: true отражал
+// любой Origin - сторонний сайт мог дёргать API из браузера жертвы. Сужаем
+// до реального домена мини-аппа (прод - MINI_APP_URL, разработка -
+// localhost:5173 Vite dev-сервера).
+await app.register(cors, { origin: [env.MINI_APP_URL, "http://localhost:5173"] });
 await app.register(wishlistRoutes);
 await app.register(itemRoutes);
 await app.register(poolRoutes);
