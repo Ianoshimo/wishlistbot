@@ -89,28 +89,33 @@ export function ItemDetail() {
                 : "Уже забронировано"}
             </div>
 
-            {item.selfPurchased ? (
-              <SbpPaymentCard item={item} />
-            ) : (
-              <a
-                href={item.url}
-                target="_blank"
-                rel="noreferrer"
-                style={{
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  height: 50,
-                  borderRadius: 14,
-                  background: "var(--surface)",
-                  border: "1px solid var(--border)",
-                  fontSize: 15,
-                  fontWeight: 600,
-                }}
-              >
-                Перейти в магазин
-              </a>
-            )}
+            {/* Находки Н-1 (sbpPhone уходил кому угодно) и Н-5 ("Перейти
+                в магазин" было кликабельно даже для чужой брони, позволяя
+                задвоить покупку) полного QA-прогона - обе карточки
+                показываем строго держателю брони. */}
+            {item.reservedByMe &&
+              (item.selfPurchased ? (
+                <SbpPaymentCard item={item} />
+              ) : (
+                <a
+                  href={item.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  style={{
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    height: 50,
+                    borderRadius: 14,
+                    background: "var(--surface)",
+                    border: "1px solid var(--border)",
+                    fontSize: 15,
+                    fontWeight: 600,
+                  }}
+                >
+                  Перейти в магазин
+                </a>
+              ))}
           </>
         )}
 

@@ -21,11 +21,17 @@ function requireTelegramId(req: FastifyRequest, bodyTelegramId: string | undefin
 
 // sbpPhone передаётся отдельно (не берётся из item), потому что это
 // реквизит владельца вишлиста, а не самой позиции - см. User.sbpPhone в
-// schema.prisma. До брони (status === "available") номер не отдаём - см.
-// то же правило в routes/items.ts.
+// schema.prisma.
+//
+// Находка Н-1 полного QA-прогона (2026-10-01): раньше номер отдавался
+// всем подряд, как только status !== "available" - не только держателю
+// брони. Это настоящий номер телефона, привязанный к реальному переводу
+// денег - отдаём строго при reservedByMe, та же граница, что и у кнопки
+// "Отметить купленным" (см. В-6, routes/items.ts).
 function serializeItem(
   item: Awaited<ReturnType<typeof db.item.findFirstOrThrow>>,
-  ownerSbpPhone: string | null = null,
+  ownerSbpPhone: string | null,
+  reservedByMe: boolean,
 ) {
   return {
     id: item.id,
@@ -35,7 +41,8 @@ function serializeItem(
     imageUrl: item.imageUrl,
     status: item.status,
     selfPurchased: item.selfPurchased,
-    sbpPhone: item.selfPurchased && item.status !== "available" ? ownerSbpPhone : null,
+    sbpPhone: item.selfPurchased && reservedByMe ? ownerSbpPhone : null,
+    reservedByMe,
     // reservedByUserId сознательно не отдаём наружу - п.2 спеки:
     // "личность дарителя не показывается никому, включая получателя".
   };
@@ -88,6 +95,10 @@ export async function wishlistRoutes(app: FastifyInstance) {
     const telegramId = requireTelegramId(req, query.telegramId);
     const isOwner = Boolean(telegramId && wishlist.owner.telegramId === BigInt(telegramId));
 
+    // Для Н-1/В-6: нужен User.id текущего просматривающего, чтобы
+    // сравнить с reservedByUserId каждой позиции (сам id наружу не идёт).
+    const viewer = telegramId ? await db.user.findUnique({ where: { telegramId: BigInt(telegramId) } }) : null;
+
     const items = await Promise.all(
       wishlist.items.map((i) => resolveExpiredReservation(i.id)),
     );
@@ -95,7 +106,9 @@ export async function wishlistRoutes(app: FastifyInstance) {
     return {
       slug: wishlist.slug,
       isOwner,
-      items: items.map((i) => serializeItem(i, wishlist.owner.sbpPhone)),
+      items: items.map((i) =>
+        serializeItem(i, wishlist.owner.sbpPhone, Boolean(viewer && i.reservedByUserId === viewer.id)),
+      ),
     };
   });
 
@@ -187,7 +200,8 @@ export async function wishlistRoutes(app: FastifyInstance) {
         imageUrl: preview.imageUrl ?? undefined,
       },
     });
-    return reply.code(201).send(serializeItem(item, sbpPhone ?? null));
+    // Новая позиция никогда не забронирована в момент создания.
+    return reply.code(201).send(serializeItem(item, sbpPhone ?? null, false));
   });
 
   app.delete("/api/items/:itemId", async (req, reply) => {
