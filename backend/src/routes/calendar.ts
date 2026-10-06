@@ -1,54 +1,53 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { db } from "../db.js";
+import { buildIcsCalendar } from "../services/ics.js";
+import { env } from "../env.js";
 
-// Спека итерации 1, раздел "Календарь и внешние интеграции": один ICS/webcal
-// фид на пользователя, единый механизм под Apple Calendar и Яндекс.Календарь.
+// Личная подписка-агрегат на поводы (CLAUDE.md, 2026-10-02, "продумай
+// бизнесово как пользователю будет удобно синхронизировать календари") -
+// переписано с нуля: раньше фид строился из Pool (групповой сбор денег,
+// итерация 2, отключена от экранов) и был пуст для всех в итерации 1.
+// Теперь источник - Wishlist.occasionDate (см. routes/wishlists.ts),
+// работает уже сейчас, без денег.
 //
-// Открытый вопрос приватности не закрыт (видит ли пользователь чужие поводы
-// по умолчанию) - до решения фид отдаёт только события, где пользователь
-// сам организатор или даритель, без чужих дней рождения.
-
-function toIcsDate(d: Date) {
-  return d.toISOString().replace(/[-:]/g, "").split(".")[0] + "Z";
-}
+// Открытый вопрос приватности из CLAUDE.md ("видит ли пользователь чужие
+// поводы по умолчанию") решён так: в подписку попадают только поводы
+// вишлистов, где этот пользователь реально дарил - забронировал позицию
+// (classic) или присоединился к доле ("скинуться"). Не все поводы на
+// свете, не поводы случайных людей - только те, где уже есть личная
+// вовлечённость.
 
 export async function calendarRoutes(app: FastifyInstance) {
-  // Беклог Б-15: раньше путь был /:telegramId.ics - telegramId не секрет,
-  // значит чужой календарь можно было скачать, просто подставив чужой id.
-  // Теперь путь - случайный токен (User.calendarToken), а не telegramId.
+  // Беклог Б-15: путь - случайный токен (User.calendarToken), а не
+  // telegramId, который не секрет (виден в Telegram-группах/URL
+  // профиля) - иначе чужой календарь можно было скачать, просто
+  // подставив чужой id.
   app.get("/api/calendar/:token.ics", async (req, reply) => {
     const { token } = z.object({ token: z.string() }).parse(req.params);
 
-    const user = await db.user.findUnique({
-      where: { calendarToken: token },
-    });
+    const user = await db.user.findUnique({ where: { calendarToken: token } });
     if (!user) return reply.code(404).send({ error: "user_not_found" });
 
-    const organizedPools = await db.pool.findMany({
-      where: { organizerId: user.id },
+    const wishlists = await db.wishlist.findMany({
+      where: {
+        occasionDate: { not: null },
+        items: {
+          some: {
+            OR: [{ reservedByUserId: user.id }, { giftShares: { some: { userId: user.id } } }],
+          },
+        },
+      },
     });
-    const contributedPools = await db.pool.findMany({
-      where: { contributions: { some: { contributorId: user.id } } },
-    });
-    const pools = [...organizedPools, ...contributedPools];
 
-    const events = pools
-      .map(
-        (p) => `BEGIN:VEVENT
-UID:${p.id}@wishlistbot
-DTSTAMP:${toIcsDate(new Date())}
-DTSTART:${toIcsDate(p.deadline)}
-SUMMARY:${p.title} - срок сбора
-END:VEVENT`,
-      )
-      .join("\n");
-
-    const ics = `BEGIN:VCALENDAR
-VERSION:2.0
-PRODID:-//wishlistbot//ru
-${events}
-END:VCALENDAR`;
+    const ics = buildIcsCalendar(
+      wishlists.map((w) => ({
+        uid: `occasion-${w.id}`,
+        title: w.occasionTitle ?? "Повод в Вишлист-боте",
+        date: w.occasionDate as Date,
+        url: `${env.MINI_APP_URL}/w/${w.slug}`,
+      })),
+    );
 
     reply.header("Content-Type", "text/calendar; charset=utf-8");
     return ics;

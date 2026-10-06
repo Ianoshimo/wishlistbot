@@ -257,25 +257,7 @@ export async function itemRoutes(app: FastifyInstance) {
     return serializeItemView(updated, updated.giftShares, item.wishlist.owner.sbpPhone, null, true);
   });
 
-  // Беклог Н-4: удаление позиции - свайпом в MyWishlist.tsx. Только
-  // владелец (та же граница, что у остальных владельческих действий).
-  // GiftShare.item - onDelete: Cascade (см. schema.prisma), так что доли
-  // "скинуться" удаляются вместе с позицией без отдельного запроса.
-  app.delete("/api/items/:itemId", async (req, reply) => {
-    const { itemId } = z.object({ itemId: z.string() }).parse(req.params);
-    const body = z.object({ telegramId: z.string().optional() }).parse(req.body);
-    const telegramId = requireTelegramId(req, body.telegramId);
-    if (!telegramId) return reply.code(401).send({ error: "unauthorized" });
-
-    const item = await db.item.findUniqueOrThrow({
-      where: { id: itemId },
-      include: { wishlist: { include: { owner: true } } },
-    });
-    if (item.wishlist.owner.telegramId !== BigInt(telegramId)) {
-      return reply.code(403).send({ error: "not_your_wishlist" });
-    }
-
-    await db.item.delete({ where: { id: itemId } });
-    return reply.code(204).send();
-  });
+  // Удаление позиции (Беклог Б-2/Н-4) зарегистрировано в
+  // routes/wishlists.ts (DELETE /api/items/:itemId) - исторически рядом
+  // с остальными владельческими действиями над вишлистом, не здесь.
 }

@@ -46,6 +46,14 @@ model Wishlist {
   slug      String   @unique @default(cuid())
   createdAt DateTime @default(now())
 
+  // Повод (например день рождения) живёт на вишлисте, а не на Pool
+  // (групповой сбор денег, итерация 2) - не требует денег/сбора, работает
+  // уже в итерации 1. Оба поля заполняются только вместе - см. валидацию
+  // в routes/wishlists.ts. Источник для разового .ics и для личной
+  // webcal-подписки (services/ics.ts).
+  occasionTitle String?
+  occasionDate  DateTime?
+
   items Item[]
 }
 
