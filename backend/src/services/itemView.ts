@@ -1,6 +1,6 @@
 import type { GiftShare, Item, User } from "@prisma/client";
 import { db } from "../db.js";
-import { resolveExpiredReservation } from "./reservation.js";
+import { giftShareDeadline, resolveExpiredReservation } from "./reservation.js";
 import { detectStore } from "./linkPreview.js";
 
 type GiftShareWithUser = GiftShare & { user: User };
@@ -10,8 +10,9 @@ type ItemWithReservedBy = Item & { reservedBy: User | null };
 // - обычный (один даритель на позицию, Item.reservedByUserId + TTL - см.
 //   services/reservation.ts, не тронуто);
 // - "скинуться на подарок" (Item.maxContributors > 1, CLAUDE.md,
-//   2026-10-02) - несколько отдельных долей в GiftShare, без TTL в v1
-//   (см. комментарий у GiftShare в schema.prisma).
+//   2026-10-02) - несколько отдельных долей в GiftShare; с 2026-10-07 у
+//   неоплаченной доли тот же TTL, что у брони (см. reservation.ts,
+//   resolveExpiredGiftShares).
 //
 // reservedBy/giftShares.user подгружаются всегда (а не только когда
 // реально кто-то раскрылся) - дешёвый join, а serializeItemView сам
@@ -19,9 +20,9 @@ type ItemWithReservedBy = Item & { reservedBy: User | null };
 export async function resolveItem(
   itemId: string,
 ): Promise<ItemWithReservedBy & { giftShares: GiftShareWithUser[] }> {
-  // resolveExpiredReservation трогает только classic-бронь
-  // (reservationTtl == null для позиций со "скинуться" - условие там
-  // просто не сработает), поэтому безопасно вызывать для обоих режимов.
+  // resolveExpiredReservation сама различает режимы: classic-бронь
+  // снимается по reservationTtl, в "скинуться" - просроченные
+  // неоплаченные доли (reservationTtl там всегда null).
   await resolveExpiredReservation(itemId);
 
   const item = await db.item.findUniqueOrThrow({
@@ -62,12 +63,16 @@ export function serializeItemView(
   let paidByMe: boolean;
   let contributorsCount: number;
   let giverNames: string[];
+  // Когда снимется бронь/доля зрителя, если он не отметит покупку/перевод
+  // - только самому держателю, остальным null.
+  let reservationExpiresAt: Date | null = null;
 
   if (isSplit) {
     contributorsCount = giftShares.length;
     const mine = viewerUserId ? giftShares.find((s) => s.userId === viewerUserId) : undefined;
     reservedByMe = Boolean(mine);
     paidByMe = Boolean(mine?.paid);
+    if (mine && !mine.paid && item.status !== "bought") reservationExpiresAt = giftShareDeadline(mine.createdAt);
     giverNames = isOwnerViewer
       ? giftShares.filter((s) => s.visible).map((s) => giverLabel(s.user))
       : [];
@@ -75,6 +80,7 @@ export function serializeItemView(
     contributorsCount = item.reservedByUserId ? 1 : 0;
     reservedByMe = Boolean(viewerUserId && item.reservedByUserId === viewerUserId);
     paidByMe = reservedByMe && item.status === "bought";
+    if (reservedByMe && item.status === "reserved") reservationExpiresAt = item.reservationTtl;
     giverNames =
       isOwnerViewer && item.reservedByVisible && item.reservedBy ? [giverLabel(item.reservedBy)] : [];
   }
@@ -103,6 +109,7 @@ export function serializeItemView(
     maxContributors: item.maxContributors,
     contributorsCount,
     paidByMe,
+    reservationExpiresAt,
     giverNames,
     // reservedByUserId/giftShares.userId сознательно не отдаются наружу
     // в сыром виде - п.2 спеки: анонимность по умолчанию. giverNames -

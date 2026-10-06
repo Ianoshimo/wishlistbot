@@ -9,7 +9,8 @@
     "start": "node dist/index.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
-    "analytics:report": "tsx src/scripts/analyticsReport.ts"
+    "analytics:report": "tsx src/scripts/analyticsReport.ts",
+    "test": "node --import tsx --test 'src/**/*.test.ts'"
   },
   "dependencies": {
     "@fastify/cors": "^9.0.1",

@@ -134,7 +134,7 @@ export function ItemDetail() {
                     всех, кроме реального держателя брони. */}
                 <div style={{ padding: 14, borderRadius: 14, background: "var(--warning-soft)", color: "var(--warning)", fontSize: 13 }}>
                   {item.reservedByMe
-                    ? `Забронировано вами · снимется через 5 дней, если не отметить ${item.selfPurchased ? "перевод" : "покупку"}`
+                    ? `Забронировано вами · снимется ${expiresIn(item.reservationExpiresAt)}, если не отметить ${item.selfPurchased ? "перевод" : "покупку"}`
                     : "Уже забронировано"}
                 </div>
 
@@ -275,7 +275,7 @@ function SplitStatus({ item, full, onShowSbp }: { item: Item; full: boolean; onS
         <div style={{ padding: 14, borderRadius: 14, background: "var(--warning-soft)", color: "var(--warning)", fontSize: 13 }}>
           {item.paidByMe
             ? `Вы перевели свою часть - ждём остальных (${progress})`
-            : `Вы присоединились (${progress}) - переведите свою часть`}
+            : `Вы присоединились (${progress}) - переведите свою часть. Место снимется ${expiresIn(item.reservationExpiresAt)}, если не отметить перевод`}
         </div>
         <button
           onClick={onShowSbp}
@@ -353,4 +353,18 @@ function SbpPaymentCard({ item }: { item: Item }) {
       </ol>
     </div>
   );
+}
+
+// Срок брони/доли (5 дней, спека п.2; для доли в "скинуться" - с
+// 2026-10-07) - считаем от настоящего дедлайна с бэкенда, а не пишем
+// всегда "5 дней", иначе на 4-й день текст врал бы.
+function expiresIn(iso: string | null): string {
+  if (!iso) return "через 5 дней";
+  const days = Math.ceil((new Date(iso).getTime() - Date.now()) / 86_400_000);
+  if (days <= 0) return "сегодня";
+  const mod10 = days % 10;
+  const mod100 = days % 100;
+  const word =
+    mod10 === 1 && mod100 !== 11 ? "день" : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? "дня" : "дней";
+  return `через ${days} ${word}`;
 }
