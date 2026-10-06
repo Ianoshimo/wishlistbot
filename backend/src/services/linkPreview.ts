@@ -123,6 +123,7 @@ export function deriveNameFromUrl(rawUrl: string): string {
   const segments = url.pathname.split("/").filter(Boolean);
   for (const segment of segments.reverse()) {
     const cleaned = segment
+      .replace(/^product--/i, "") // Яндекс.Маркет: /product--<slug>/<id>
       .replace(/\.\w+$/, "") // .aspx/.html
       .replace(/[-_]/g, " ")
       .split(/\s+/)
@@ -167,6 +168,95 @@ function extractMeta(html: string, property: string): string | null {
 
   const match = html.match(plain) ?? html.match(plainReverse) ?? html.match(json);
   return match ? match[1].replace(/\\u0026/g, "&").replace(/&amp;/g, "&") : null;
+}
+
+// Н-6 (техдолг с QA 2026-10-01, разобран 2026-10-07). Яндекс.Маркет
+// находит товар ТОЛЬКО по числовому id в ссылке, slug перед ним
+// игнорирует - и не редиректит. Ссылка
+// /product--naushniki-sony-wh-1000xm5/1779000001 с ошибочным id честно
+// отвечает 200 страницей совсем другого товара (id 1779000001 реально
+// существует - чехол MyPads), а несуществующий id - тоже 200, но
+// страницей "Нет такой страницы" с логотипом в og:image. Поэтому
+// сверяем, какой товар страница реально показала, с id и slug из
+// исходной ссылки:
+// - /product--<slug>/<id>: og:url - голое /product/ без id, зато в
+//   JSON-состоянии страницы есть "productId":"<id>","productSlug":"<slug>";
+// - /card/<slug>/<sku>: в og:url - настоящий slug и sku показанной
+//   карточки (при чужом slug в ссылке там всё равно настоящий).
+// Обрезанные слепки реальных ответов - __fixtures__/, проверка -
+// linkPreview.test.ts. Остальные магазины эта проверка не затрагивает.
+interface YandexMarketRef {
+  kind: "product" | "card";
+  id: string; // id модели для /product, sku для /card
+  slug: string | null;
+}
+
+export function parseYandexMarketUrl(rawUrl: string): YandexMarketRef | null {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+  const host = url.hostname.replace(/^(www|m)\./, "");
+  if (host !== "market.yandex.ru") return null;
+
+  const product = url.pathname.match(/^\/product(?:--([^/]+))?\/(\d+)(?:\/|$)/);
+  if (product) return { kind: "product", id: product[2], slug: product[1] ?? null };
+  const card = url.pathname.match(/^\/card\/([^/]+)\/(\d+)(?:\/|$)/);
+  if (card) return { kind: "card", id: card[2], slug: card[1] };
+  return null;
+}
+
+function slugTokens(slug: string): Set<string> {
+  return new Set(
+    slug
+      .toLowerCase()
+      .split(/[-_]+/)
+      .filter((t) => t.length >= 3 && !/^\d+$/.test(t)),
+  );
+}
+
+// slug в ссылке пользователя может немного разойтись с текущим slug
+// товара (Маркет иногда переименовывает карточку), поэтому достаточно
+// хотя бы одного общего осмысленного слова. Полностью чужой slug ("x",
+// "naushniki-..." против "chekhol-...") - уже не тот товар.
+function slugsMatch(requested: string, served: string): boolean {
+  if (requested.toLowerCase() === served.toLowerCase()) return true;
+  const servedTokens = slugTokens(served);
+  for (const t of slugTokens(requested)) {
+    if (servedTokens.has(t)) return true;
+  }
+  return false;
+}
+
+export function isPreviewForRequestedProduct(
+  requestedUrl: string,
+  finalUrl: string,
+  html: string,
+): boolean {
+  const requested = parseYandexMarketUrl(requestedUrl);
+  if (!requested) return true; // не товар Маркета - сверять не с чем
+
+  // Редирект на другой товар.
+  const final = parseYandexMarketUrl(finalUrl);
+  if (final && final.kind === requested.kind && final.id !== requested.id) return false;
+
+  const served: YandexMarketRef[] = [];
+  const ogUrl = extractMeta(html, "og:url");
+  const fromOg = ogUrl ? parseYandexMarketUrl(ogUrl) : null;
+  if (fromOg) served.push(fromOg);
+  for (const m of html.matchAll(/"productId":"(\d+)","productSlug":"([^"]+)"/g)) {
+    served.push({ kind: "product", id: m[1], slug: m[2] });
+  }
+
+  const match = served.find((s) => s.kind === requested.kind && s.id === requested.id);
+  // Нет записи о запрошенном товаре - это страница "Нет такой страницы",
+  // чужая карточка или Маркет поменял вёрстку. Во всех случаях
+  // безопаснее название из ссылки, чем чужие/служебные og-теги.
+  if (!match) return false;
+  if (requested.slug && match.slug && !slugsMatch(requested.slug, match.slug)) return false;
+  return true;
 }
 
 export async function fetchLinkPreview(rawUrl: string): Promise<LinkPreview> {
@@ -215,6 +305,7 @@ export async function fetchLinkPreview(rawUrl: string): Promise<LinkPreview> {
     if (!contentType.includes("text/html")) return EMPTY;
 
     const html = await res.text();
+    if (!isPreviewForRequestedProduct(url.toString(), res.url, html)) return EMPTY;
     const imageUrl = extractMeta(html, "og:image");
     const rawTitle = extractMeta(html, "og:title");
     return { title: rawTitle ? shortenTitle(rawTitle) : null, imageUrl };
