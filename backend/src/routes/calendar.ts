@@ -3,6 +3,7 @@ import { z } from "zod";
 import { db } from "../db.js";
 import { buildIcsCalendar } from "../services/ics.js";
 import { env } from "../env.js";
+import { dailyKey, track } from "../services/analytics.js";
 
 // Личная подписка-агрегат на поводы (CLAUDE.md, 2026-10-02, "продумай
 // бизнесово как пользователю будет удобно синхронизировать календари") -
@@ -48,6 +49,14 @@ export async function calendarRoutes(app: FastifyInstance) {
         url: `https://t.me/${env.BOT_USERNAME}?startapp=w_${w.slug}`,
       })),
     );
+
+    // Аналитика: календарь опрашивает фид периодически - одно событие на
+    // пользователя в сутки (сигнал "подписка реально используется").
+    track("calendar_feed_fetched", {
+      userId: user.id,
+      props: { occasionCount: wishlists.length },
+      dedupeKey: dailyKey("calendar_feed_fetched", user.id),
+    });
 
     reply.header("Content-Type", "text/calendar; charset=utf-8");
     return ics;

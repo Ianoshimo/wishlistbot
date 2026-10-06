@@ -3,6 +3,7 @@ import { env } from "../env.js";
 import { db } from "../db.js";
 import { getOrCreateWishlist } from "../services/wishlistService.js";
 import { createItemFromUrl } from "../services/itemCreate.js";
+import { track } from "../services/analytics.js";
 
 export const bot = new Bot(env.BOT_TOKEN);
 
@@ -15,7 +16,8 @@ export const bot = new Bot(env.BOT_TOKEN);
 bot.command("start", async (ctx) => {
   if (!ctx.from) return;
 
-  await db.user.upsert({
+  const existed = await db.user.findUnique({ where: { telegramId: BigInt(ctx.from.id) }, select: { id: true } });
+  const user = await db.user.upsert({
     where: { telegramId: BigInt(ctx.from.id) },
     update: { firstName: ctx.from.first_name, username: ctx.from.username },
     create: {
@@ -24,6 +26,7 @@ bot.command("start", async (ctx) => {
       username: ctx.from.username,
     },
   });
+  track("bot_started", { userId: user.id, props: { isNewUser: !existed } });
 
   const keyboard = new InlineKeyboard().webApp(
     "Открыть вишлист-бот",
@@ -87,7 +90,10 @@ bot.callbackQuery(["addlink:yes", "addlink:no"], async (ctx) => {
 
   if (!ctx.from) return;
   const wishlist = await getOrCreateWishlist(String(ctx.from.id));
-  const item = await createItemFromUrl(wishlist.id, url);
+  const item = await createItemFromUrl(wishlist.id, url, undefined, undefined, undefined, undefined, {
+    source: "bot",
+    ownerUserId: wishlist.ownerId,
+  });
 
   await ctx.answerCallbackQuery({ text: "Добавлено в вишлист" });
   await ctx.editMessageText(`Добавлено в вишлист: ${item.title}`);
@@ -177,6 +183,18 @@ bot.on(["message:photo", "message:video", "message:video_note"], async (ctx) => 
       console.error("[thank]", "Не удалось переслать благодарность дарителю", err);
     }
   }
+
+  // Аналитика: только тип медиа и счётчики - без file_id и без дарителей.
+  track("thanks_sent", {
+    userId: item.wishlist.ownerId,
+    wishlistId: item.wishlistId,
+    itemId: item.id,
+    props: {
+      mediaType: ctx.message.photo ? "photo" : ctx.message.video ? "video" : "video_note",
+      recipients: givers.length,
+      delivered: sent,
+    },
+  });
 
   await ctx.reply(
     givers.length > 1 ? `Спасибо отправлено ${sent} из ${givers.length}! 🎉` : sent > 0 ? "Спасибо отправлено! 🎉" : "Не получилось отправить - попробуйте ещё раз позже.",

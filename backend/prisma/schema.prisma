@@ -181,3 +181,33 @@ model Contribution {
 
   createdAt DateTime @default(now())
 }
+
+// Продуктовая аналитика (2026-10-07) - собственная таблица событий в той
+// же Postgres, не сторонний сервис: событийные данные о желаниях/покупках,
+// привязанные к поводу, и есть актив проекта (см. CLAUDE.md, "Суть"), и
+// отдавать их (вместе с персональными данными) третьим лицам не хотим.
+// Пишется только через services/analytics.ts track() - fire-and-forget.
+//
+// Связи с User/Wishlist/Item нарочно НЕ внешние ключи: событие - запись
+// истории, она должна переживать удаление позиции (DELETE /api/items) и
+// не должна мешать ему.
+//
+// Приватность: в props никогда не пишутся телефоны, telegramId, имена,
+// initData, тексты сообщений, file_id медиа - только внутренний User.id.
+model Event {
+  id         String   @id @default(cuid())
+  type       String
+  userId     String?
+  wishlistId String?
+  itemId     String?
+  props      Json     @default("{}")
+  // Ключ дедупликации для частых событий (просмотр чужого вишлиста,
+  // опрос календарной подписки) - "одно событие на пользователя+объект
+  // в сутки"; повтор упирается в unique и молча отбрасывается.
+  dedupeKey  String?  @unique
+  createdAt  DateTime @default(now())
+
+  @@index([type, createdAt])
+  @@index([userId, createdAt])
+  @@index([wishlistId])
+}

@@ -92,3 +92,46 @@ npm run dev
 разработку.
 
 Оба пакета собираются и типы проходят чисто (`npm run build` в каждом).
+
+## Продуктовая аналитика
+
+События пишутся в собственную таблицу `Event` той же Postgres (модель в
+`backend/prisma/schema.prisma`, миграция `analytics_events`) - не в
+сторонний сервис: событийные данные о желаниях и покупках, привязанные к
+поводу, и есть актив проекта. Запись - `track()` в
+`backend/src/services/analytics.ts`, fire-and-forget: сбой записи события
+только пишет `[analytics]` warn в лог и никогда не ломает основной запрос.
+
+| Событие | Где | Ключевые props |
+|---|---|---|
+| `bot_started` | `/start` в боте | `isNewUser` |
+| `wishlist_created` | `POST /api/wishlists`, бот | `source` (app/bot), `ordinal` |
+| `item_added` | `services/itemCreate.ts` | `source`, `store`, `price` (коп.), `selfPurchased`, `maxContributors` |
+| `wishlist_viewed` | `GET /api/wishlists/:slug` не владельцем | `anonymous`, `registered`, `itemCount`; не чаще 1 раза в сутки на зрителя+вишлист |
+| `item_reserved` | `POST /api/items/:id/reserve` | `mode` (classic/split), `revealIdentity`, `selfPurchased`, `store` |
+| `purchase_marked` | `POST /api/items/:id/mark-bought` | `mode`, `selfPurchased` |
+| `item_bought` | позиция перешла в bought | `mode`, `store`, `price`, `contributors`, `occasionMonthDay` |
+| `occasion_set` / `occasion_cleared` | `PATCH /api/wishlists/:slug` | `title`, `monthDay` (MM-DD) |
+| `occasion_ics_downloaded` | `GET /api/wishlists/:slug/occasion.ics` | - |
+| `calendar_feed_fetched` | `GET /api/calendar/:token.ics` | `occasionCount`; 1 раз в сутки на пользователя |
+| `thanks_sent` | бот, благодарность дарителю | `mediaType`, `recipients`, `delivered` |
+
+Приватность: в событиях нет телефонов (`sbpPhone`), `telegramId`, имён,
+`initData`, текстов сообщений и `file_id` медиа - пользователь только
+внутренним `User.id` (`null` у анонимного зрителя). Зритель без записи
+`User` различается для дедупликации по HMAC от `telegramId` с серверным
+секретом, сам `telegramId` не хранится.
+
+Отчёт - только CLI, HTTP-эндпоинта нарочно нет:
+
+```bash
+cd backend
+npm run analytics:report          # последние 30 дней
+npm run analytics:report -- 7     # последние 7 дней
+node dist/scripts/analyticsReport.js 30   # на проде после npm run build
+```
+
+Печатает: события по типам, воронку по вишлистам, созданным за период
+(создал → добавил позицию → открыли дарители → бронь → покупка),
+магазины, долю "уже купил(а) сам(а)" и "скинуться", цены, брони/раскрытия
+и ближайшие поводы по месяцам (по текущим данным `Wishlist`).

@@ -1,6 +1,7 @@
 import { db } from "../db.js";
-import { deriveNameFromUrl, fetchLinkPreview } from "./linkPreview.js";
+import { deriveNameFromUrl, detectStore, fetchLinkPreview } from "./linkPreview.js";
 import { fetchWildberriesViaApify, isWildberriesUrl } from "./wildberriesApify.js";
+import { track, type ItemSource } from "./analytics.js";
 
 // Создание позиции по ссылке (подгрузка фото/названия) - вынесено из
 // routes/wishlists.ts, чтобы той же логикой мог воспользоваться бот
@@ -13,6 +14,9 @@ export async function createItemFromUrl(
   price?: number,
   selfPurchased?: boolean,
   maxContributors?: number,
+  // Аналитика (2026-10-07): откуда добавлена позиция и кто владелец -
+  // событие item_added пишется здесь, в одном месте для мини-аппа и бота.
+  meta?: { source: ItemSource; ownerUserId: string },
 ) {
   let preview = await fetchLinkPreview(url);
 
@@ -29,7 +33,7 @@ export async function createItemFromUrl(
 
   const isDirectImage = preview.imageUrl === url;
 
-  return db.item.create({
+  const item = await db.item.create({
     data: {
       wishlistId,
       url,
@@ -43,4 +47,19 @@ export async function createItemFromUrl(
       imageUrl: preview.imageUrl ?? undefined,
     },
   });
+
+  track("item_added", {
+    userId: meta?.ownerUserId ?? null,
+    wishlistId,
+    itemId: item.id,
+    props: {
+      source: meta?.source ?? "app",
+      store: detectStore(url),
+      price: item.price ?? null,
+      selfPurchased: item.selfPurchased,
+      maxContributors: item.maxContributors,
+    },
+  });
+
+  return item;
 }
