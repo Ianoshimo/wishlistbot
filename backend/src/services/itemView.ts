@@ -79,13 +79,22 @@ export function serializeItemView(
       isOwnerViewer && item.reservedByVisible && item.reservedBy ? [giverLabel(item.reservedBy)] : [];
   }
 
+  // QA-11: в "скинуться" позиция остаётся "available" в БД, пока не
+  // оплатили все - но когда все доли уже разобраны, для зрителя она занята,
+  // а не "Свободно".
+  const status = isSplit && item.status !== "bought" && contributorsCount >= item.maxContributors ? "reserved" : item.status;
+
   return {
     id: item.id,
     url: item.url,
     title: item.title,
     price: item.price,
     imageUrl: item.imageUrl,
-    status: item.status,
+    status,
+    // QA-10: владелец, попавший на экран своей позиции по прямой ссылке, не
+    // должен видеть "Забронировать". Только булево - не раскрывает ничего
+    // сверх того, что зритель и так знает о себе.
+    viewerIsOwner: isOwnerViewer,
     selfPurchased: item.selfPurchased,
     sbpPhone: item.selfPurchased && reservedByMe ? ownerSbpPhone : null,
     reservedByMe,

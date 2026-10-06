@@ -34,6 +34,18 @@ const ERROR_MESSAGES: Record<string, string> = {
   wishlist_limit_reached: "Можно завести не больше 3 вишлистов",
 };
 
+// Повод хранится как UTC-полночь календарного дня (QA-14) - показываем его
+// в UTC, иначе западнее Гринвича бейдж показал бы предыдущий день.
+export function formatOccasionDate(iso: string): string {
+  return new Date(iso).toLocaleDateString("ru-RU", { day: "numeric", month: "long", timeZone: "UTC" });
+}
+
+// QA-7: "29 990 ₽" с неразрывными пробелами - цена не переносится
+// посередине и читается с разделителем тысяч.
+export function formatRub(kopecks: number): string {
+  return `${Math.round(kopecks / 100).toLocaleString("ru-RU")}\u00a0₽`;
+}
+
 export function describeError(err: unknown): string {
   const code = err instanceof Error ? err.message : "";
   return ERROR_MESSAGES[code] ?? "Что-то пошло не так, попробуйте ещё раз";
@@ -97,6 +109,8 @@ export interface Item {
   // зрителям бэкенд всегда отдаёт [], даже если кто-то раскрылся (п.2
   // спеки - раскрытие работает только в сторону получателя).
   giverNames: string[];
+  // QA-10: зритель - владелец вишлиста (бронировать своё нельзя).
+  viewerIsOwner: boolean;
 }
 
 export interface WishlistResponse {
@@ -139,10 +153,10 @@ export const api = {
   // подставит "Вишлист N"). В отличие от старого поведения, этот вызов
   // больше не идемпотентен - см. getMyWishlists ниже для восстановления
   // уже существующих списков.
-  createWishlist: (title?: string) =>
+  createWishlist: (title?: string, onlyIfNone?: boolean) =>
     request<{ id: string; slug: string; title: string }>("/api/wishlists", {
       method: "POST",
-      body: JSON.stringify({ telegramId: getTelegramId(), title }),
+      body: JSON.stringify({ telegramId: getTelegramId(), title, onlyIfNone }),
     }),
 
   // Все вишлисты текущего пользователя - переключатель в MyWishlist.tsx

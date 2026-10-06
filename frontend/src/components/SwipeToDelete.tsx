@@ -67,6 +67,10 @@ export function SwipeToDelete({
           color: "#ffffff",
           fontSize: 13,
           fontWeight: 600,
+          // QA-12: у полупрозрачных карточек (купленные позиции) подложка
+          // просвечивала и наезжала на бейдж - показываем её только когда
+          // карточка реально сдвинута.
+          visibility: offset < 0 ? "visible" : "hidden",
         }}
       >
         {deleteLabel}
@@ -80,6 +84,9 @@ export function SwipeToDelete({
           transform: `translateX(${offset}px)`,
           transition: dragState.current ? "none" : "transform 0.2s ease",
           touchAction: "pan-y",
+          // QA-8: при свайпе мышью/пальцем не выделять текст карточки.
+          userSelect: "none",
+          WebkitUserSelect: "none",
         }}
       >
         {children}

@@ -4,6 +4,10 @@ const schema = z.object({
   DATABASE_URL: z.string().min(1),
   BOT_TOKEN: z.string().min(1),
   MINI_APP_URL: z.string().url(),
+  // Юзернейм бота для ссылок "открыть мини-апп" вне Telegram (например,
+  // из события в календаре) - t.me/<bot>?startapp=..., а не голый адрес
+  // фронта: вне Telegram у страницы нет initData и прод отвечает 401.
+  BOT_USERNAME: z.string().default("wishhdesk_bot"),
   PORT: z.coerce.number().default(3000),
   YOOKASSA_SHOP_ID: z.string().optional(),
   YOOKASSA_SECRET_KEY: z.string().optional(),

@@ -168,6 +168,13 @@ export function AddItemForm({ slug, onAdded }: { slug: string; onAdded: (item: I
         )}
       </div>
       <div style={{ padding: "0 20px 20px" }}>
+        {saving && (
+          // QA-5: подгрузка фото/названия (особенно Wildberries через
+          // Apify) может идти до ~30 с - без пояснения кажется зависанием.
+          <div style={{ fontSize: 12, color: "var(--text-secondary)", textAlign: "center", marginBottom: 8 }}>
+            Подтягиваем фото и название из магазина - это может занять до 30 секунд
+          </div>
+        )}
         <PrimaryButton onClick={submit} disabled={!url || saving} style={{ width: "100%" }}>
           {saving ? "Добавляем…" : "Добавить в вишлист"}
         </PrimaryButton>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, describeError, type Item, type MyWishlistSummary, type WishlistResponse } from "../api";
+import { api, describeError, formatOccasionDate, formatRub, type Item, type MyWishlistSummary, type WishlistResponse } from "../api";
 import {
   BottomSheet,
   ErrorBanner,
@@ -64,9 +64,14 @@ export function MyWishlist() {
           slug = mine.wishlists[0]?.slug;
         }
         if (!slug) {
-          const created = await api.createWishlist();
+          // QA-1: onlyIfNone - если параллельный запуск (двойной эффект
+          // React, два открытия подряд) уже успел создать список, бэкенд
+          // вернёт его же, а не создаст второй.
+          const created = await api.createWishlist(undefined, true);
           slug = created.slug;
-          mine.wishlists.push({ slug: created.slug, title: created.title, itemCount: 0 });
+          if (!mine.wishlists.some((w) => w.slug === created.slug)) {
+            mine.wishlists.push({ slug: created.slug, title: created.title, itemCount: 0 });
+          }
         }
         localStorage.setItem(MY_SLUG_KEY, slug);
         setMyWishlists(mine.wishlists);
@@ -103,6 +108,11 @@ export function MyWishlist() {
   }
   if (!wishlist) return null;
 
+  // QA-6: счётчик позиций во вкладке обновляется вместе со списком, а не
+  // только после перезагрузки.
+  const bumpItemCount = (slug: string, delta: number) =>
+    setMyWishlists((list) => list.map((w) => (w.slug === slug ? { ...w, itemCount: Math.max(0, w.itemCount + delta) } : w)));
+
   const boughtCount = wishlist.items.filter((i) => i.status === "bought").length;
   // Приоритет позиции ("хочу больше всего") - приоритетные позиции
   // поднимаются наверх, стандартный паттерн вишлистов (CLAUDE.md,
@@ -122,6 +132,7 @@ export function MyWishlist() {
     try {
       await api.deleteItem(itemId);
       setWishlist((w) => (w ? { ...w, items: w.items.filter((i) => i.id !== itemId) } : w));
+      bumpItemCount(wishlist.slug, -1);
     } catch (err) {
       setActionError(describeError(err));
     }
@@ -259,7 +270,7 @@ export function MyWishlist() {
           }}
         >
           🎉 {wishlist.occasionTitle} ·{" "}
-          {new Date(wishlist.occasionDate).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}
+          {formatOccasionDate(wishlist.occasionDate)}
         </button>
       )}
 
@@ -335,18 +346,22 @@ export function MyWishlist() {
                     <div style={{ fontSize: 15, fontWeight: 600 }}>
                       {item.title ?? item.url}
                     </div>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 2 }}>
+                    {/* QA-7: бейдж статуса - в строке с ценой, а не отдельной
+                        колонкой справа: колонка съедала ширину, и название
+                        ломалось по слову в строку, а цена - пополам. */}
+                    <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
                       {item.price && (
-                        <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-                          {(item.price / 100).toFixed(0)} ₽
+                        <span style={{ fontSize: 13, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+                          {formatRub(item.price)}
                         </span>
                       )}
                       <StoreBadge store={item.store} />
+                      <StatusBadge status={item.status} />
                     </div>
                     {item.selfPurchased && (
                       <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
                         Уже куплено · перевод по СБП
-                        {item.maxContributors > 1 && ` · скинулись ${item.contributorsCount} из ${item.maxContributors}`}
+                        {item.maxContributors > 1 && ` · участвуют ${item.contributorsCount} из ${item.maxContributors}`}
                       </div>
                     )}
                     {item.giverNames.length > 0 && (
@@ -383,7 +398,6 @@ export function MyWishlist() {
                       />
                     </svg>
                   </button>
-                  <StatusBadge status={item.status} />
                 </div>
               </SwipeToDelete>
             ))}
@@ -398,6 +412,7 @@ export function MyWishlist() {
           slug={wishlist.slug}
           onAdded={(item) => {
             setWishlist((w) => (w ? { ...w, items: [...w.items, item] } : w));
+            bumpItemCount(wishlist.slug, 1);
             setAddOpen(false);
           }}
         />

@@ -10,6 +10,19 @@ import { Contribute } from "./pages/Contribute";
 import { CalendarRecipient } from "./pages/CalendarRecipient";
 import { CalendarGiver } from "./pages/CalendarGiver";
 import { CalendarOrganizer } from "./pages/CalendarOrganizer";
+import { ErrorBanner, Header, Screen } from "./components/UI";
+
+// QA-18: неизвестный адрес раньше давал полностью пустой экран.
+function NotFound() {
+  return (
+    <Screen>
+      <Header title="Вишлист-бот" backTo="/" />
+      <div style={{ padding: 20 }}>
+        <ErrorBanner message="Такой страницы нет - вернитесь к своему вишлисту." />
+      </div>
+    </Screen>
+  );
+}
 
 // Карта маршрутов сверена с Продукт/флоу-итерация-1.md. Часть экранов
 // макета - это состояния одного маршрута, а не отдельные страницы:
@@ -30,6 +43,7 @@ export function App() {
         <Route path="/calendar" element={<CalendarRecipient />} />
         <Route path="/calendar/giver" element={<CalendarGiver />} />
         <Route path="/calendar/organizer" element={<CalendarOrganizer />} />
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
   );

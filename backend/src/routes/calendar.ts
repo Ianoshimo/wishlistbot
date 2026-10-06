@@ -45,7 +45,7 @@ export async function calendarRoutes(app: FastifyInstance) {
         uid: `occasion-${w.id}`,
         title: w.occasionTitle ?? "Повод в Вишлист-боте",
         date: w.occasionDate as Date,
-        url: `${env.MINI_APP_URL}/w/${w.slug}`,
+        url: `https://t.me/${env.BOT_USERNAME}?startapp=w_${w.slug}`,
       })),
     );
 

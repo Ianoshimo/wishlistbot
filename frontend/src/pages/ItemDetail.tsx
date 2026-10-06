@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { api, describeError, type Item } from "../api";
+import { api, describeError, formatRub, type Item } from "../api";
 import { BottomSheet, CopyRow, ErrorBanner, Header, PrimaryButton, Screen, StoreBadge } from "../components/UI";
 
 // Спека итерации 1, п.2-3: полный жизненный цикл брони в одном экране,
@@ -18,11 +18,28 @@ export function ItemDetail() {
   // после брони - решение фиксируется один раз, см. reserve() ниже.
   const [revealIdentity, setRevealIdentity] = useState(false);
 
-  const reload = () => api.getItem(itemId).then(setItem);
+  // QA-17: позиция могла быть удалена владельцем (или ссылка битая) -
+  // раньше экран оставался полностью пустым без навигации.
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const reload = () =>
+    api
+      .getItem(itemId)
+      .then(setItem)
+      .catch((err) => setLoadError(describeError(err)));
   useEffect(() => {
     void reload();
   }, [itemId]);
 
+  if (loadError && !item) {
+    return (
+      <Screen>
+        <Header title="Подарок" backTo="/" />
+        <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
+          <ErrorBanner message="Позиция не найдена - возможно, получатель удалил её из вишлиста." />
+        </div>
+      </Screen>
+    );
+  }
   if (!item) return null;
 
   // "Скинуться на подарок" (CLAUDE.md, 2026-10-02) - несколько дарителей
@@ -31,9 +48,11 @@ export function ItemDetail() {
   // item.maxContributors - см. backend/src/routes/items.ts.
   const isSplit = item.maxContributors > 1;
   const full = item.contributorsCount >= item.maxContributors;
-  const canReserve = isSplit
-    ? !item.reservedByMe && !full && item.status !== "bought"
-    : item.status === "available";
+  // QA-10: владелец на экране своей позиции (прямая ссылка) не видит
+  // "Забронировать" - бронировать своё всё равно нельзя.
+  const canReserve =
+    !item.viewerIsOwner &&
+    (isSplit ? !item.reservedByMe && !full && item.status !== "bought" : item.status === "available");
 
   const reserve = async () => {
     setError(null);
@@ -43,6 +62,9 @@ export function ItemDetail() {
       if (item.selfPurchased) setSbpSheetOpen(true);
     } catch (err) {
       setError(describeError(err));
+      // QA-16: после конфликта ("уже забронировали") показываем актуальное
+      // состояние, а не "свободно" с кнопкой, которая снова упадёт.
+      await reload();
     }
   };
   const markBought = async () => {
@@ -75,7 +97,7 @@ export function ItemDetail() {
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4 }}>
             {item.price && (
               <span style={{ fontSize: 16, color: "var(--text-secondary)" }}>
-                {(item.price / 100).toFixed(0)} ₽
+                {formatRub(item.price)}
               </span>
             )}
             <StoreBadge store={item.store} />
@@ -97,9 +119,11 @@ export function ItemDetail() {
                   color: "var(--text-secondary)",
                 }}
               >
-                {item.selfPurchased
-                  ? "Получатель уже купил(а) этот подарок сам(а) - идти в магазин не нужно, после брони вы получите номер телефона для перевода."
-                  : "Позиция ещё свободна. Никто не увидит, что именно вы дарите."}
+                {item.viewerIsOwner
+                  ? "Это ваша позиция - друзья видят её свободной и могут забронировать."
+                  : item.selfPurchased
+                    ? "Получатель уже купил(а) этот подарок сам(а) - идти в магазин не нужно, после брони вы получите номер телефона для перевода."
+                    : "Позиция ещё свободна. Никто не увидит, что именно вы дарите."}
               </div>
             )}
 
@@ -161,7 +185,11 @@ export function ItemDetail() {
 
             {item.status === "bought" && (
               <div style={{ padding: 14, borderRadius: 14, background: "var(--success-soft)", color: "var(--success)", fontSize: 13 }}>
-                {item.selfPurchased ? "Спасибо! Отмечено, что перевод отправлен." : "Спасибо! Отмечено как купленное."}
+                {!item.reservedByMe
+                  ? "Этот подарок уже подарили."
+                  : item.selfPurchased
+                    ? "Спасибо! Отмечено, что перевод отправлен."
+                    : "Спасибо! Отмечено как купленное."}
               </div>
             )}
           </>
@@ -226,12 +254,17 @@ export function ItemDetail() {
 // режима с несколькими дарителями: прогресс "X из Y" + состояние именно
 // текущего зрителя (присоединился/оплатил/нет мест).
 function SplitStatus({ item, full, onShowSbp }: { item: Item; full: boolean; onShowSbp: () => void }) {
-  const progress = `${item.contributorsCount} из ${item.maxContributors} уже скинулись`;
+  // QA-13: присоединившиеся ещё не обязательно перевели - "участвуют", а
+  // не "скинулись".
+  const progress = `участвуют ${item.contributorsCount} из ${item.maxContributors}`;
 
   if (item.status === "bought") {
+    // QA-19: "Спасибо!" - только участникам; остальным - нейтральный статус.
     return (
       <div style={{ padding: 14, borderRadius: 14, background: "var(--success-soft)", color: "var(--success)", fontSize: 13 }}>
-        Спасибо! Все перевели свою часть ({item.maxContributors} из {item.maxContributors}).
+        {item.reservedByMe
+          ? `Спасибо! Все перевели свою часть (${item.maxContributors} из ${item.maxContributors}).`
+          : "Подарок уже собран - все участники перевели свою часть."}
       </div>
     );
   }

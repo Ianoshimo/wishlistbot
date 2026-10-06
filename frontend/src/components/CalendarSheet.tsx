@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { absoluteApiUrl, api, describeError } from "../api";
+import { absoluteApiUrl, api, describeError, formatOccasionDate } from "../api";
 import { CopyRow, ErrorBanner, Field, PrimaryButton } from "./UI";
 
 // Содержимое bottom sheet "Календарь" (CLAUDE.md, 2026-10-02, "продумай
@@ -55,7 +55,9 @@ export function CalendarSheet({
     setSaving(true);
     setError(null);
     try {
-      const iso = new Date(`${date}T00:00:00`).toISOString();
+      // QA-14: повод - календарный день. Шлём UTC-полночь выбранной даты,
+      // а не местную полночь (она в UTC уезжала на предыдущий день).
+      const iso = `${date}T00:00:00.000Z`;
       const result = await api.setOccasion(slug, title.trim(), iso);
       onSaved(result.occasionTitle, result.occasionDate);
       setEditing(false);
@@ -111,7 +113,7 @@ export function CalendarSheet({
             <div style={{ flexGrow: 1 }}>
               <div style={{ fontSize: 15, fontWeight: 600 }}>{occasionTitle}</div>
               <div style={{ fontSize: 13, color: "var(--text-secondary)" }}>
-                {new Date(occasionDate).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}
+                {formatOccasionDate(occasionDate)}
               </div>
             </div>
             <button

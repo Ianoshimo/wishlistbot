@@ -420,6 +420,7 @@ export function Field({
   placeholder,
   type = "text",
   min,
+  maxLength,
 }: {
   label: string;
   value: string;
@@ -427,6 +428,7 @@ export function Field({
   placeholder?: string;
   type?: string;
   min?: string;
+  maxLength?: number;
 }) {
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -436,6 +438,7 @@ export function Field({
         value={value}
         placeholder={placeholder}
         min={min}
+        maxLength={maxLength}
         onChange={(e) => onChange(e.target.value)}
         style={{
           height: 48,

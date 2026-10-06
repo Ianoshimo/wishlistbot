@@ -5,7 +5,7 @@ import { resolveItem, serializeItemView } from "../services/itemView.js";
 import { createItemFromUrl } from "../services/itemCreate.js";
 import { resolveTelegramId } from "../auth/telegramAuth.js";
 import { upsertUserByTelegramId } from "../services/userUpsert.js";
-import { buildIcsCalendar } from "../services/ics.js";
+import { buildIcsCalendar, toCalendarDay } from "../services/ics.js";
 import { env } from "../env.js";
 
 // Привязка логина через Telegram (2026-10-02): telegramId больше не
@@ -55,21 +55,40 @@ export async function wishlistRoutes(app: FastifyInstance) {
   // если вообще ничего нет - тот же Н-2 сценарий, просто в другом месте).
   app.post("/api/wishlists", async (req, reply) => {
     const body = z
-      .object({ telegramId: z.string().optional(), title: z.string().min(1).max(60).optional() })
+      .object({
+        telegramId: z.string().optional(),
+        title: z.string().min(1).max(60).optional(),
+        // Автосоздание первого списка при первом запуске (MyWishlist.tsx) -
+        // если список уже есть, вернуть его, а не создавать второй. Кнопка
+        // "+" этот флаг не шлёт и создаёт новый список как обычно.
+        onlyIfNone: z.boolean().optional(),
+      })
       .parse(req.body);
     const telegramId = requireTelegramId(req, body.telegramId);
     if (!telegramId) return reply.code(401).send({ error: "unauthorized" });
 
     const owner = await upsertUserByTelegramId(telegramId);
-    const count = await db.wishlist.count({ where: { ownerId: owner.id } });
-    if (count >= WISHLIST_LIMIT) {
-      return reply.code(409).send({ error: "wishlist_limit_reached" });
-    }
 
-    const wishlist = await db.wishlist.create({
-      data: { ownerId: owner.id, title: body.title ?? `Вишлист ${count + 1}` },
+    // QA-1: два параллельных первых запуска (двойной эффект React, два
+    // открытия мини-аппа подряд) оба видели 0 списков и оба создавали
+    // новый. Advisory-lock на владельца сериализует проверку и создание -
+    // заодно и лимит WISHLIST_LIMIT больше нельзя обойти гонкой.
+    const result = await db.$transaction(async (tx) => {
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${owner.id}))`;
+      const existing = await tx.wishlist.findMany({ where: { ownerId: owner.id }, orderBy: { createdAt: "asc" } });
+      if (body.onlyIfNone && existing.length > 0) return { wishlist: existing[0], created: false };
+      if (existing.length >= WISHLIST_LIMIT) return null;
+      const wishlist = await tx.wishlist.create({
+        // QA-2: первый список - "Мой вишлист" (как в схеме и документации),
+        // следующие - "Вишлист N".
+        data: { ownerId: owner.id, title: body.title ?? (existing.length === 0 ? "Мой вишлист" : `Вишлист ${existing.length + 1}`) },
+      });
+      return { wishlist, created: true };
     });
-    return reply.code(201).send({ id: wishlist.id, slug: wishlist.slug, title: wishlist.title });
+    if (!result) return reply.code(409).send({ error: "wishlist_limit_reached" });
+
+    const { wishlist, created } = result;
+    return reply.code(created ? 201 : 200).send({ id: wishlist.id, slug: wishlist.slug, title: wishlist.title });
   });
 
   // Список своих вишлистов для переключателя (CLAUDE.md, 2026-10-02) -
@@ -184,7 +203,7 @@ export async function wishlistRoutes(app: FastifyInstance) {
         ...(body.occasionTitle !== undefined
           ? {
               occasionTitle: body.occasionTitle,
-              occasionDate: body.occasionDate ? new Date(body.occasionDate) : null,
+              occasionDate: body.occasionDate ? toCalendarDay(new Date(body.occasionDate)) : null,
             }
           : {}),
       },
@@ -215,7 +234,7 @@ export async function wishlistRoutes(app: FastifyInstance) {
         uid: `occasion-${wishlist.id}`,
         title: wishlist.occasionTitle,
         date: wishlist.occasionDate,
-        url: `${env.MINI_APP_URL}/w/${wishlist.slug}`,
+        url: `https://t.me/${env.BOT_USERNAME}?startapp=w_${wishlist.slug}`,
       },
     ]);
 
@@ -292,7 +311,7 @@ export async function wishlistRoutes(app: FastifyInstance) {
       body.maxContributors,
     );
     // Новая позиция никогда не забронирована в момент создания.
-    return reply.code(201).send(serializeItemView({ ...item, reservedBy: null }, [], sbpPhone ?? null, null));
+    return reply.code(201).send(serializeItemView({ ...item, reservedBy: null }, [], sbpPhone ?? null, null, true));
   });
 
   app.delete("/api/items/:itemId", async (req, reply) => {

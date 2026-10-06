@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { absoluteApiUrl, api, describeError, type WishlistResponse } from "../api";
+import { absoluteApiUrl, api, describeError, formatOccasionDate, formatRub, type WishlistResponse } from "../api";
 import { ErrorBanner, Header, PriorityStar, Screen, StatusBadge, StoreBadge, Thumbnail } from "../components/UI";
 
 // Спека итерации 1, п.9 + флоу-итерация-1.md: первый переход по ссылке
@@ -41,6 +41,22 @@ export function SharedWishlist() {
     localStorage.setItem(seenKey(slug), "1");
     setShowInvite(false);
   };
+
+  // QA-18: ошибка (несуществующий вишлист) и загрузка - раньше приглашения:
+  // иначе по битой ссылке сначала звали "Открыть вишлист", а потом
+  // показывали "не найден".
+  if (error) {
+    return (
+      <Screen>
+        <Header title="Вишлист" />
+        <div style={{ padding: 20 }}>
+          <ErrorBanner message={error} />
+        </div>
+      </Screen>
+    );
+  }
+
+  if (!wishlist || wishlist.isOwner) return null;
 
   if (showInvite) {
     return (
@@ -83,19 +99,6 @@ export function SharedWishlist() {
     );
   }
 
-  if (error) {
-    return (
-      <Screen>
-        <Header title="Вишлист" />
-        <div style={{ padding: 20 }}>
-          <ErrorBanner message={error} />
-        </div>
-      </Screen>
-    );
-  }
-
-  if (!wishlist || wishlist.isOwner) return null;
-
   return (
     <Screen>
       <Header title={wishlist.title} />
@@ -119,7 +122,7 @@ export function SharedWishlist() {
         >
           <div style={{ flexGrow: 1, fontSize: 13, fontWeight: 600, color: "var(--accent)" }}>
             🎉 {wishlist.occasionTitle} ·{" "}
-            {new Date(wishlist.occasionDate).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })}
+            {formatOccasionDate(wishlist.occasionDate)}
           </div>
           <a
             href={absoluteApiUrl(`/api/wishlists/${slug}/occasion.ics`)}
@@ -159,16 +162,25 @@ export function SharedWishlist() {
             <Thumbnail src={item.imageUrl} />
             <div style={{ flexGrow: 1, minWidth: 0 }}>
               <div style={{ fontSize: 15, fontWeight: 600 }}>{item.title ?? item.url}</div>
-              <StoreBadge store={item.store} />
+              {/* QA-9: цена в списке и у дарителя - выбирать подарок под
+                  бюджет, не открывая каждую карточку. */}
+              <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
+                {item.price && (
+                  <span style={{ fontSize: 13, color: "var(--text-secondary)", whiteSpace: "nowrap" }}>
+                    {formatRub(item.price)}
+                  </span>
+                )}
+                <StoreBadge store={item.store} />
+                <StatusBadge status={item.status} />
+              </div>
               {item.selfPurchased && (
                 <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
                   Уже куплено · перевод по СБП
-                  {item.maxContributors > 1 && ` · скинулись ${item.contributorsCount} из ${item.maxContributors}`}
+                  {item.maxContributors > 1 && ` · участвуют ${item.contributorsCount} из ${item.maxContributors}`}
                 </div>
               )}
             </div>
             <PriorityStar active={item.priority} editable={false} />
-            <StatusBadge status={item.status} />
           </Link>
         ))}
       </div>

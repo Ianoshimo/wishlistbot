@@ -11,8 +11,18 @@
 // дня, чтобы реально успеть выбрать и купить подарок, а не просто
 // увидеть дату в день икс.
 
+// QA-14: повод - календарный день, а не момент времени. Клиент мог прислать
+// "местную полночь" в UTC (15 декабря по Москве = 2026-12-14T21:00Z), и
+// голый toISOString() давал день на сутки раньше. Сдвиг на +12 ч и усечение
+// до UTC-дня возвращают задуманный день для любого пояса в пределах ±12 ч -
+// и для уже сохранённых значений, и для старых закэшированных клиентов.
+export function toCalendarDay(d: Date): Date {
+  const shifted = new Date(d.getTime() + 12 * 60 * 60 * 1000);
+  return new Date(Date.UTC(shifted.getUTCFullYear(), shifted.getUTCMonth(), shifted.getUTCDate()));
+}
+
 function toIcsDateOnly(d: Date): string {
-  return d.toISOString().slice(0, 10).replace(/-/g, "");
+  return toCalendarDay(d).toISOString().slice(0, 10).replace(/-/g, "");
 }
 
 // CRLF и экранирование спецсимволов по RFC 5545 - без этого Apple
@@ -35,7 +45,7 @@ function buildEvent(event: OccasionEvent): string {
   const lines = [
     "BEGIN:VEVENT",
     `UID:${event.uid}@wishlistbot`,
-    `DTSTAMP:${toIcsDateOnly(new Date())}T000000Z`,
+    `DTSTAMP:${new Date().toISOString().slice(0, 10).replace(/-/g, "")}T000000Z`,
     `DTSTART;VALUE=DATE:${toIcsDateOnly(event.date)}`,
     "RRULE:FREQ=YEARLY",
     `SUMMARY:${escapeIcsText(event.title)}`,
