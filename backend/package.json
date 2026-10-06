@@ -8,7 +8,8 @@
     "build": "tsc -p tsconfig.json",
     "start": "node dist/index.js",
     "prisma:generate": "prisma generate",
-    "prisma:migrate": "prisma migrate dev"
+    "prisma:migrate": "prisma migrate dev",
+    "analytics:report": "tsx src/scripts/analyticsReport.ts"
   },
   "dependencies": {
     "@fastify/cors": "^9.0.1",
