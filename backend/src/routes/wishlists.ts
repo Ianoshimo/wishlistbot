@@ -7,6 +7,7 @@ import { resolveTelegramId } from "../auth/telegramAuth.js";
 import { upsertUserByTelegramId } from "../services/userUpsert.js";
 import { buildIcsCalendar, toCalendarDay } from "../services/ics.js";
 import { env } from "../env.js";
+import { dailyKey, monthDay, track, viewerKey } from "../services/analytics.js";
 
 // Привязка логина через Telegram (2026-10-02): telegramId больше не
 // берётся из тела запроса напрямую - только из проверенной подписи
@@ -83,11 +84,18 @@ export async function wishlistRoutes(app: FastifyInstance) {
         // следующие - "Вишлист N".
         data: { ownerId: owner.id, title: body.title ?? (existing.length === 0 ? "Мой вишлист" : `Вишлист ${existing.length + 1}`) },
       });
-      return { wishlist, created: true };
+      return { wishlist, created: true, ordinal: existing.length + 1 };
     });
     if (!result) return reply.code(409).send({ error: "wishlist_limit_reached" });
 
     const { wishlist, created } = result;
+    if (created) {
+      track("wishlist_created", {
+        userId: owner.id,
+        wishlistId: wishlist.id,
+        props: { source: "app", ordinal: result.ordinal ?? 1 },
+      });
+    }
     return reply.code(created ? 201 : 200).send({ id: wishlist.id, slug: wishlist.slug, title: wishlist.title });
   });
 
@@ -141,6 +149,19 @@ export async function wishlistRoutes(app: FastifyInstance) {
     const items = await Promise.all(
       wishlist.items.map((i) => resolveItem(i.id)),
     );
+
+    // Аналитика: открытие чужого вишлиста - сигнал "поделился и открыли
+    // дарители" в воронке. Не чаще раза в сутки на зрителя+вишлист, чтобы
+    // рефреши не спамили; совсем анонимные (без initData) - общим ключом
+    // на вишлист.
+    if (!isOwner) {
+      track("wishlist_viewed", {
+        userId: viewer?.id ?? null,
+        wishlistId: wishlist.id,
+        props: { anonymous: !telegramId, registered: Boolean(viewer), itemCount: wishlist.items.length },
+        dedupeKey: dailyKey("wishlist_viewed", wishlist.id, viewerKey(viewer?.id, telegramId)),
+      });
+    }
 
     return {
       slug: wishlist.slug,
@@ -209,6 +230,19 @@ export async function wishlistRoutes(app: FastifyInstance) {
       },
     });
 
+    // Аналитика: повод - ключевые данные о событии (что и когда дарят).
+    if (body.occasionTitle !== undefined) {
+      if (updated.occasionTitle && updated.occasionDate) {
+        track("occasion_set", {
+          userId: wishlist.ownerId,
+          wishlistId: wishlist.id,
+          props: { title: updated.occasionTitle, monthDay: monthDay(updated.occasionDate) },
+        });
+      } else if (wishlist.occasionTitle) {
+        track("occasion_cleared", { userId: wishlist.ownerId, wishlistId: wishlist.id, props: {} });
+      }
+    }
+
     return {
       title: updated.title,
       occasionTitle: updated.occasionTitle,
@@ -240,6 +274,8 @@ export async function wishlistRoutes(app: FastifyInstance) {
 
     reply.header("Content-Type", "text/calendar; charset=utf-8");
     reply.header("Content-Disposition", `attachment; filename="${wishlist.slug}.ics"`);
+    // Публичный эндпоинт без идентичности - userId неизвестен.
+    track("occasion_ics_downloaded", { wishlistId: wishlist.id, props: {} });
     return ics;
   });
 
@@ -309,6 +345,7 @@ export async function wishlistRoutes(app: FastifyInstance) {
       body.price,
       body.selfPurchased,
       body.maxContributors,
+      { source: "app", ownerUserId: wishlist.ownerId },
     );
     // Новая позиция никогда не забронирована в момент создания.
     return reply.code(201).send(serializeItemView({ ...item, reservedBy: null }, [], sbpPhone ?? null, null, true));

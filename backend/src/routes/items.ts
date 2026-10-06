@@ -7,6 +7,31 @@ import { resolveItem, serializeItemView } from "../services/itemView.js";
 import { resolveTelegramId, telegramIdSchema } from "../auth/telegramAuth.js";
 import { upsertUserByTelegramId } from "../services/userUpsert.js";
 import { bot } from "../bot/bot.js";
+import { monthDay, track, type ReserveMode } from "../services/analytics.js";
+import { detectStore } from "../services/linkPreview.js";
+
+// Аналитика: "позиция стала bought" - с датой повода вишлиста (месяц-день),
+// чтобы покупку можно было привязать к событию. Повод дочитывается
+// отдельно и не ждётся - сбой не влияет на ответ.
+function trackItemBought(
+  item: { id: string; wishlistId: string; url: string; price: number | null; selfPurchased: boolean },
+  mode: ReserveMode,
+  contributors: number,
+  userId: string,
+) {
+  const base = { mode, selfPurchased: item.selfPurchased, store: detectStore(item.url), price: item.price, contributors };
+  db.wishlist
+    .findUnique({ where: { id: item.wishlistId }, select: { occasionDate: true } })
+    .then((w) => w?.occasionDate ?? null, () => null)
+    .then((date) =>
+      track("item_bought", {
+        userId,
+        wishlistId: item.wishlistId,
+        itemId: item.id,
+        props: { ...base, occasionMonthDay: date ? monthDay(date) : null },
+      }),
+    );
+}
 
 function requireTelegramId(req: FastifyRequest, bodyTelegramId: string | undefined): string | null {
   const initData = req.headers["x-telegram-init-data"];
@@ -111,6 +136,12 @@ export async function itemRoutes(app: FastifyInstance) {
         // (гонка двух кликов), фронт и так прячет кнопку при reservedByMe.
         return reply.code(409).send({ error: "item_not_available" });
       }
+      track("item_reserved", {
+        userId: user.id,
+        wishlistId: item.wishlistId,
+        itemId,
+        props: { mode: "split", revealIdentity: Boolean(body.revealIdentity), selfPurchased: item.selfPurchased, store: detectStore(item.url) },
+      });
       return { status: "reserved" };
     }
 
@@ -136,6 +167,12 @@ export async function itemRoutes(app: FastifyInstance) {
       return reply.code(409).send({ error: "item_not_available" });
     }
 
+    track("item_reserved", {
+      userId: user.id,
+      wishlistId: item.wishlistId,
+      itemId,
+      props: { mode: "classic", revealIdentity: Boolean(body.revealIdentity), selfPurchased: item.selfPurchased, store: detectStore(item.url) },
+    });
     return { status: "reserved" };
   });
 
@@ -161,12 +198,19 @@ export async function itemRoutes(app: FastifyInstance) {
 
       if (!share.paid) {
         await db.giftShare.update({ where: { id: share.id }, data: { paid: true, paidAt: new Date() } });
+        track("purchase_marked", {
+          userId: user.id,
+          wishlistId: item.wishlistId,
+          itemId,
+          props: { mode: "split", selfPurchased: item.selfPurchased },
+        });
       }
 
       const shares = await db.giftShare.findMany({ where: { itemId } });
       const allPaid = shares.length === item.maxContributors && shares.every((s) => s.paid);
       if (allPaid && item.status !== "bought") {
         await db.item.update({ where: { id: itemId }, data: { status: "bought" } });
+        trackItemBought(item, "split", shares.length, user.id);
         await notifyOwnerPurchased(app, item.wishlistId, item.id, item.selfPurchased);
       }
       return { status: allPaid ? "bought" : "reserved" };
@@ -180,6 +224,13 @@ export async function itemRoutes(app: FastifyInstance) {
     }
 
     await db.item.update({ where: { id: itemId }, data: { status: "bought" } });
+    track("purchase_marked", {
+      userId: user.id,
+      wishlistId: item.wishlistId,
+      itemId,
+      props: { mode: "classic", selfPurchased: item.selfPurchased },
+    });
+    trackItemBought(item, "classic", 1, user.id);
 
     // Продукт 2026-10-01: получатель не может отметить свою же позицию
     // купленной (бронь всегда чужая, см. cannot_reserve_own_item выше) -
