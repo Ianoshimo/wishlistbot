@@ -1,0 +1,430 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Гид по Whish Helper</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Golos+Text:wght@400;500;600;700&display=swap">
+<style>
+/* Layout: вертикальная лента слайдов со scroll-snap; в каждом слайде текст слева и макет экрана приложения справа, на телефоне - друг под другом. */
+:root {
+  --bg: #f5f4fb;
+  --surface: #ffffff;
+  --fg: #1d1830;
+  --muted: #625b80;
+  --line: #e2dff0;
+  --accent: #4d3e99;
+  --accent-soft: rgba(77, 62, 153, 0.1);
+  --lime: #c4e05a;
+  --lime-ink: #2b3208;
+  --warn: #9a6a0a;
+  --warn-soft: rgba(214, 160, 40, 0.16);
+  --ok: #2f7d4f;
+  --ok-soft: rgba(47, 125, 79, 0.13);
+  --phone: #ffffff;
+  --display: "Unbounded", "Golos Text", system-ui, sans-serif;
+  --body: "Golos Text", -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15111f; --surface: #211a35; --fg: #f1eefb; --muted: #a59dc6; --line: #2f2748;
+    --accent: #8a7ae0; --accent-soft: rgba(138, 122, 224, 0.18); --lime: #c4e05a; --lime-ink: #1b2005;
+    --warn: #e8b64a; --warn-soft: rgba(232, 182, 74, 0.16); --ok: #6fcf97; --ok-soft: rgba(111, 207, 151, 0.15);
+    --phone: #1b1530; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15111f; --surface: #211a35; --fg: #f1eefb; --muted: #a59dc6; --line: #2f2748;
+  --accent: #8a7ae0; --accent-soft: rgba(138, 122, 224, 0.18); --lime: #c4e05a; --lime-ink: #1b2005;
+  --warn: #e8b64a; --warn-soft: rgba(232, 182, 74, 0.16); --ok: #6fcf97; --ok-soft: rgba(111, 207, 151, 0.15);
+  --phone: #1b1530; color-scheme: dark;
+}
+
+html { scroll-snap-type: y proximity; scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body { background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 17px; line-height: 1.55; }
+
+.slide {
+  scroll-snap-align: start;
+  min-height: 100svh;
+  display: grid;
+  align-items: center;
+  padding-inline: 16px;
+  padding-block: 56px;
+  border-bottom: 1px solid var(--line);
+}
+.inner {
+  width: 100%;
+  max-width: 1080px;
+  margin-inline: auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 0.85fr);
+  gap: 56px;
+  align-items: center;
+}
+.inner.single { grid-template-columns: minmax(0, 1fr); max-width: 760px; }
+@media (max-width: 820px) {
+  .inner { grid-template-columns: minmax(0, 1fr); gap: 32px; }
+  .slide { min-height: auto; padding-block: 48px; }
+}
+
+.count { font-family: var(--display); font-size: 12px; letter-spacing: 0.14em; color: var(--muted); text-transform: uppercase; margin: 0 0 18px; font-variant-numeric: tabular-nums; }
+h1, h2 { font-family: var(--display); font-weight: 700; text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: clamp(34px, 6.4vw, 68px); line-height: 1.04; }
+h2 { font-size: clamp(26px, 3.8vw, 40px); line-height: 1.12; }
+h3 { font-size: 17px; font-weight: 700; margin: 0 0 4px; }
+.lead { font-size: clamp(17px, 2vw, 20px); color: var(--muted); max-width: 34em; margin: 20px 0 0; }
+p { margin: 0; max-width: 36em; }
+.text { display: grid; gap: 18px; min-width: 0; }
+.mark { background: var(--lime); color: var(--lime-ink); padding: 0 0.18em; border-radius: 0.18em; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+
+.points { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+.points li { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 12px; align-items: start; }
+.points li::before { content: ""; width: 10px; height: 10px; margin-top: 9px; border-radius: 3px; background: var(--accent); justify-self: center; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; counter-reset: s; }
+.steps li { counter-increment: s; display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 14px; align-items: start; }
+.steps li::before { content: counter(s); font-family: var(--display); font-weight: 700; font-size: 15px; width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--accent-soft); color: var(--accent); }
+.note { font-size: 15px; color: var(--muted); border-left: 3px solid var(--lime); padding-left: 14px; }
+
+/* Макеты экранов - упрощённые копии реального интерфейса */
+.phone {
+  background: var(--phone);
+  border: 1px solid var(--line);
+  border-radius: 28px;
+  padding: 18px 14px;
+  display: grid;
+  gap: 10px;
+  box-shadow: 0 24px 60px -30px rgba(40, 30, 90, 0.45);
+  max-width: 360px;
+  width: 100%;
+  justify-self: center;
+  font-size: 14px;
+  min-width: 0;
+}
+.p-title { font-family: var(--display); font-size: 16px; font-weight: 700; padding: 2px 4px 4px; }
+.tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.tab { flex-shrink: 0; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); font-size: 12px; font-weight: 600; white-space: nowrap; }
+.tab.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.card { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 11px 12px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface); }
+.card.dim { opacity: 0.62; }
+.c-name { font-weight: 600; font-size: 14px; line-height: 1.3; }
+.c-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 5px; font-size: 12px; color: var(--muted); }
+.c-sub { font-size: 11.5px; color: var(--muted); margin-top: 4px; }
+.price { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.badge { padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+.b-free { background: var(--accent-soft); color: var(--accent); }
+.b-busy { background: var(--warn-soft); color: var(--warn); }
+.b-done { background: var(--ok-soft); color: var(--ok); }
+.store { font-weight: 600; }
+.icons { display: flex; gap: 10px; color: var(--muted); font-size: 15px; }
+.star-on { color: var(--lime); text-shadow: 0 0 0 var(--lime-ink); }
+.progress { padding: 12px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); display: grid; gap: 8px; }
+.progress b { font-family: var(--display); font-size: 14px; }
+.bar { height: 6px; border-radius: 6px; background: var(--line); overflow: hidden; }
+.bar span { display: block; height: 100%; background: var(--lime); border-radius: 6px; }
+.btn { text-align: center; padding: 12px; border-radius: 12px; background: var(--accent); color: #fff; font-weight: 600; font-size: 14px; }
+.btn.ghost { background: transparent; color: var(--fg); border: 1px solid var(--line); }
+.check { display: flex; gap: 8px; align-items: center; font-size: 12.5px; color: var(--muted); }
+.box { width: 16px; height: 16px; border-radius: 4px; border: 1.5px solid var(--accent); display: grid; place-items: center; font-size: 11px; color: var(--accent); flex-shrink: 0; }
+.banner { padding: 10px 12px; border-radius: 12px; font-size: 12.5px; }
+.banner.warn { background: var(--warn-soft); color: var(--warn); }
+.banner.ok { background: var(--ok-soft); color: var(--ok); }
+.banner.accent { background: var(--accent-soft); color: var(--accent); font-weight: 600; display: flex; justify-content: space-between; gap: 8px; align-items: center; flex-wrap: wrap; }
+.mini-btn { background: var(--accent); color: #fff; padding: 5px 10px; border-radius: 8px; font-size: 11.5px; }
+.row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
+.row small { display: block; color: var(--muted); font-size: 11px; }
+.row .copy { font-size: 11.5px; color: var(--accent); font-weight: 600; }
+.swipe { position: relative; border-radius: 14px; overflow: hidden; }
+.swipe .del { position: absolute; inset: 0 0 0 auto; width: 72px; background: #d64545; color: #fff; display: grid; place-items: center; font-size: 12px; font-weight: 600; }
+.swipe .card { transform: translateX(-72px); }
+
+/* Чат с ботом */
+.chat { display: grid; gap: 8px; }
+.msg { max-width: 85%; padding: 9px 12px; border-radius: 14px; font-size: 13px; line-height: 1.4; }
+.msg.me { justify-self: end; background: var(--accent); color: #fff; border-bottom-right-radius: 4px; overflow-wrap: anywhere; }
+.msg.bot { justify-self: start; background: var(--surface); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+.kb { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; max-width: 85%; }
+.kb span { text-align: center; padding: 7px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); font-size: 12.5px; font-weight: 600; }
+.media { height: 92px; border-radius: 12px; background: linear-gradient(135deg, var(--accent-soft), var(--warn-soft)); display: grid; place-items: center; color: var(--muted); font-size: 12px; justify-self: end; width: 70%; }
+
+/* FAQ */
+.faq { display: grid; gap: 12px; }
+.faq details { border: 1px solid var(--line); border-radius: 14px; background: var(--surface); padding: 14px 16px; }
+.faq summary { cursor: pointer; font-weight: 600; list-style: none; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; }
+.faq summary::-webkit-details-marker { display: none; }
+.faq summary::after { content: "+"; font-family: var(--display); color: var(--accent); }
+.faq details[open] summary::after { content: "−"; }
+.faq details p { margin-top: 10px; color: var(--muted); font-size: 15.5px; }
+.faq summary:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 6px; }
+
+.cta { display: inline-flex; align-items: center; gap: 10px; background: var(--accent); color: #fff; text-decoration: none; padding: 16px 24px; border-radius: 16px; font-weight: 600; font-size: 17px; justify-self: start; }
+.handle { font-family: var(--display); font-size: 15px; color: var(--muted); }
+
+/* Навигация точками - только на широком экране */
+.dots { position: fixed; right: 18px; top: 50%; transform: translateY(-50%); display: grid; gap: 10px; z-index: 5; }
+.dots a { width: 9px; height: 9px; border-radius: 50%; background: var(--line); display: block; }
+.dots a.on { background: var(--accent); }
+@media (max-width: 980px) { .dots { display: none; } }
+</style>
+<style>body{margin:0}</style>
+</head>
+<body>
+
+<nav class="dots" aria-label="Слайды" id="dots"></nav>
+
+<section class="slide" id="start">
+  <div class="inner">
+    <div class="text">
+      <p class="count">Whish Helper · @wishhdesk_bot</p>
+      <h1>Вишлист в Telegram, где подарки <span class="mark">не повторяются</span></h1>
+      <p class="lead">Вы собираете список того, что хотите получить, и делитесь ссылкой. Друзья бронируют подарки, и двух одинаковых не будет. Кто что дарит, остаётся сюрпризом.</p>
+    </div>
+    <div class="phone" aria-hidden="true">
+      <div class="p-title">День рождения</div>
+      <div class="progress"><b>2 из 4 куплено</b><div class="bar"><span style="width:50%"></span></div></div>
+      <div class="card"><div><div class="c-name">Беспроводные наушники</div><div class="c-meta"><span class="price">29&nbsp;990&nbsp;₽</span><span class="store">Ozon</span><span class="badge b-done">Куплено</span></div></div><div class="icons"><span>☆</span></div></div>
+      <div class="card"><div><div class="c-name">Настольная игра</div><div class="c-meta"><span class="price">2&nbsp;490&nbsp;₽</span><span class="store">Wildberries</span><span class="badge b-busy">Занято</span></div></div><div class="icons"><span class="star-on">★</span></div></div>
+      <div class="card"><div><div class="c-name">Кофемолка</div><div class="c-meta"><span class="price">4&nbsp;200&nbsp;₽</span><span class="store">Яндекс.Маркет</span><span class="badge b-free">Свободно</span></div></div><div class="icons"><span>☆</span></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" id="how">
+  <div class="inner">
+    <div class="text">
+      <p class="count">Как это работает</p>
+      <h2>Три шага от списка до подарка</h2>
+      <ol class="steps">
+        <li><div><h3>Соберите список</h3><p>Добавляйте ссылки на подарки из любых магазинов. Название и фото подтянутся сами.</p></div></li>
+        <li><div><h3>Поделитесь ссылкой</h3><p>Кнопка со стрелкой в шапке даёт ссылку на ваш список. Отправьте её друзьям или в общий чат.</p></div></li>
+        <li><div><h3>Друзья бронируют</h3><p>Каждый выбирает свободную позицию. Занятые и купленные подарки видны всем, поэтому дубликатов не будет.</p></div></li>
+      </ol>
+    </div>
+    <div class="phone" aria-hidden="true">
+      <div class="p-title">Вишлист готов</div>
+      <div class="row"><div><small>Ссылка для друзей</small>t.me/wishhdesk_bot?startapp=…</div><span class="copy">Копировать</span></div>
+      <div class="note" style="font-size:12.5px">Друзья открывают ссылку прямо в Telegram, ничего устанавливать не нужно.</div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" id="secret">
+  <div class="inner">
+    <div class="text">
+      <p class="count">Сюрприз</p>
+      <h2>Кто дарит, по умолчанию не видит никто</h2>
+      <p>Получатель видит только состояние подарка: свободен, занят или уже куплен. Имени дарителя нет ни у получателя, ни у других друзей.</p>
+      <p>Если хочется, даритель может раскрыться сам. Перед бронью есть галочка «Показать получателю, что дарю я». Тогда имя увидит только получатель, другие дарители по-прежнему ничего не узнают. Выбор делается один раз, в момент брони.</p>
+    </div>
+    <div class="phone" aria-hidden="true">
+      <div class="c-meta" style="gap:8px"><span class="badge b-free">Свободно</span><span class="badge b-busy">Занято</span><span class="badge b-done">Куплено</span></div>
+      <div class="banner accent" style="font-weight:500">Позиция ещё свободна. Никто не увидит, что именно вы дарите.</div>
+      <div class="check"><span class="box">✓</span>Показать получателю, что дарю я</div>
+      <div class="btn">Забронировать</div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" id="add">
+  <div class="inner">
+    <div class="text">
+      <p class="count">Начать</p>
+      <h2>Создайте вишлист и добавьте первый подарок</h2>
+      <ol class="steps">
+        <li><div><p>Откройте <b>@wishhdesk_bot</b> и нажмите кнопку «Открыть вишлист-бот», затем «Создать свой вишлист».</p></div></li>
+        <li><div><p>Нажмите круглую кнопку «+» внизу экрана и вставьте ссылку на товар: Ozon, Wildberries, Яндекс.Маркет, AliExpress, Авито или любой другой магазин.</p></div></li>
+        <li><div><p>Нажмите «Добавить в вишлист». Название и фото подтянутся по ссылке, иногда это занимает до 30 секунд. Цену и название можно вписать и вручную.</p></div></li>
+      </ol>
+      <p class="note">Можно не открывать приложение: просто перешлите ссылку на товар в чат с ботом. Он спросит, добавить ли её в вишлист.</p>
+    </div>
+    <div class="phone" aria-hidden="true">
+      <div class="chat">
+        <div class="msg me">https://www.wildberries.ru/catalog/…</div>
+        <div class="msg bot">Добавить эту ссылку в вишлист?</div>
+        <div class="kb"><span>Добавить</span><span>Не надо</span></div>
+        <div class="msg bot">Добавлено в вишлист: Настольная игра</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" id="manage">
+  <div class="inner">
+    <div class="text">
+      <p class="count">Ваш список</p>
+      <h2>До трёх вишлистов и всё под рукой</h2>
+      <ul class="points">
+        <li><div><h3>Несколько списков</h3><p>Заведите до трёх, например на день рождения и на Новый год. Переключайтесь вкладками вверху. Чтобы переименовать список, нажмите на его вкладку, когда она уже открыта.</p></div></li>
+        <li><div><h3>Звёздочка «хочу больше всего»</h3><p>Отмеченные подарки поднимаются наверх списка, чтобы друзьям было проще выбрать.</p></div></li>
+        <li><div><h3>Карандаш</h3><p>Исправляет ссылку, название или цену, если вы ошиблись при добавлении.</p></div></li>
+        <li><div><h3>Свайп влево</h3><p>Открывает кнопку «Удалить». Если подарок уже забронировали, приложение переспросит.</p></div></li>
+      </ul>
+    </div>
+    <div class="phone" aria-hidden="true">
+      <div class="tabs"><span class="tab on">День рождения · 4</span><span class="tab">Новый год</span><span class="tab">+</span></div>
+      <div class="card"><div><div class="c-name">Настольная игра</div><div class="c-meta"><span class="price">2&nbsp;490&nbsp;₽</span><span class="badge b-free">Свободно</span></div></div><div class="icons"><span class="star-on">★</span><span>✎</span></div></div>
+      <div class="swipe"><div class="del">Удалить</div><div class="card"><div><div class="c-name">Плед</div><div class="c-meta"><span class="price">1&nbsp;890&nbsp;₽</span><span class="store">Ozon</span></div></div><div class="icons"><span>☆</span><span>✎</span></div></div></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" id="give">
+  <div class="inner">
+    <div class="text">
+      <p class="count">Для дарителя</p>
+      <h2>Забронировали, купили, отметили</h2>
+      <ul class="points">
+        <li><div><p>Откройте список по ссылке, выберите свободный подарок и нажмите «Забронировать».</p></div></li>
+        <li><div><p>Кнопку «Перейти в магазин» видите только вы. Остальные видят «Уже забронировано».</p></div></li>
+        <li><div><p>Бронь держится <b>5 дней</b>. Если за это время не отметить покупку, подарок снова станет свободным.</p></div></li>
+        <li><div><p>Купили — нажмите «Отметить купленным». Получатель получит короткое уведомление, что один из подарков куплен, без вашего имени.</p></div></li>
+      </ul>
+    </div>
+    <div class="phone" aria-hidden="true">
+      <div class="p-title">Подарок</div>
+      <div class="c-name" style="font-size:16px; padding:0 4px">Настольная игра</div>
+      <div class="banner warn">Забронировано вами · снимется через 5 дней, если не отметить покупку</div>
+      <div class="btn ghost">Перейти в магазин</div>
+      <div class="btn">Отметить купленным</div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" id="sbp">
+  <div class="inner">
+    <div class="text">
+      <p class="count">Уже купил(а) сам(а)</p>
+      <h2>Подарок деньгами по СБП</h2>
+      <p>Бывает, что получатель уже купил вещь сам и хочет вернуть деньги. Тогда при добавлении он отмечает «Уже купил(а) этот подарок сам(а)» и указывает номер для перевода.</p>
+      <p>Даритель нажимает «Перевести деньгами» и видит карточку перевода: номер, сумму и комментарий с кнопками «Копировать». После перевода нажимает «Деньги отправлены».</p>
+      <p class="note">Деньги идут напрямую из вашего банка получателю. Приложение в переводе не участвует и комиссию не берёт. Номер телефона видит только тот, кто забронировал подарок.</p>
+    </div>
+    <div class="phone" aria-hidden="true">
+      <div class="p-title">Перевод по СБП</div>
+      <div class="row"><div><small>Номер телефона</small>+7 900 000-00-00</div><span class="copy">Копировать</span></div>
+      <div class="row"><div><small>Сумма</small><span class="price">30&nbsp;000&nbsp;₽</span></div><span class="copy">Копировать</span></div>
+      <div class="row"><div><small>Комментарий к переводу</small>Кофемашина</div><span class="copy">Копировать</span></div>
+      <div class="btn">Деньги отправлены</div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" id="together">
+  <div class="inner">
+    <div class="text">
+      <p class="count">Скинуться вместе</p>
+      <h2>Дорогой подарок на несколько человек</h2>
+      <ul class="points">
+        <li><div><p>Получатель включает «Можно скинуться нескольким» и выбирает, сколько человек участвуют: от 2 до 10.</p></div></li>
+        <li><div><p>Каждый присоединяется сам и переводит свою часть. Сумма в карточке уже поделена на число участников.</p></div></li>
+        <li><div><p>Каждый отмечает «Деньги отправлены» за себя. Подарок становится купленным, когда перевели все.</p></div></li>
+        <li><div><p>На перевод своей части есть 5 дней. Если участник не успел, его место освобождается для другого. Уже отмеченные переводы сохраняются.</p></div></li>
+      </ul>
+    </div>
+    <div class="phone" aria-hidden="true">
+      <div class="p-title">Велосипед</div>
+      <div class="c-meta" style="padding:0 4px"><span class="price">9&nbsp;000&nbsp;₽</span><span>участвуют 2 из 3</span></div>
+      <div class="bar"><span style="width:66%"></span></div>
+      <div class="banner warn">Вы присоединились (участвуют 2 из 3), переведите свою часть</div>
+      <div class="row"><div><small>Сумма (ваша часть из 3)</small><span class="price">3&nbsp;000&nbsp;₽</span></div><span class="copy">Копировать</span></div>
+      <div class="btn">Деньги отправлены</div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" id="thanks">
+  <div class="inner">
+    <div class="text">
+      <p class="count">Поблагодарить</p>
+      <h2>Спасибо фото или видео, без раскрытия имён</h2>
+      <p>Когда подарок деньгами отмечен купленным, бот пришлёт получателю сообщение с кнопкой «Поблагодарить дарителя».</p>
+      <p>Нажмите её и отправьте боту фото, видео или кружочек. Бот перешлёт благодарность тому, кто перевёл деньги, или всем, если скидывались вместе. Кому именно ушло сообщение, получатель не видит.</p>
+    </div>
+    <div class="phone" aria-hidden="true">
+      <div class="chat">
+        <div class="msg bot">Один из подарков в вашем вишлисте отмечен как купленный</div>
+        <div class="kb" style="grid-template-columns:1fr"><span>Поблагодарить дарителя</span></div>
+        <div class="msg bot">Пришлите фото или короткое видео. Перешлю дарителю, не называя вас.</div>
+        <div class="media">фото</div>
+        <div class="msg bot">Спасибо отправлено!</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" id="dates">
+  <div class="inner">
+    <div class="text">
+      <p class="count">Поводы и календарь</p>
+      <h2>Напоминание за три дня до праздника</h2>
+      <p>Владелец списка нажимает значок календаря в шапке и задаёт повод: название и дату, например «День рождения, 15 декабря».</p>
+      <ul class="points">
+        <li><div><p>Друзья видят повод на странице списка и кнопкой «В календарь» добавляют его в свой календарь: Apple, Google или Яндекс.</p></div></li>
+        <li><div><p>Напоминание срабатывает за 3 дня и повторяется каждый год, чтобы было время выбрать подарок.</p></div></li>
+        <li><div><p>Тем, кто дарит часто, пригодится личная подписка в том же окне. Она сама собирает поводы всех списков, где вы бронировали или скидывались. Чужие праздники туда не попадают.</p></div></li>
+      </ul>
+    </div>
+    <div class="phone" aria-hidden="true">
+      <div class="p-title">День рождения</div>
+      <div class="banner accent"><span>День рождения · 15 декабря</span><span class="mini-btn">В календарь</span></div>
+      <div class="row"><div><small>Напоминание</small>12 декабря, за 3 дня</div><span class="copy">каждый год</span></div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" id="faq">
+  <div class="inner single">
+    <div class="text">
+      <p class="count">Частые вопросы</p>
+      <h2>Коротко о главном</h2>
+      <div class="faq">
+        <details><summary>Дарители видят друг друга?</summary><p>Нет. Имя дарителя видит только получатель, и только если даритель сам отметил «Показать получателю, что дарю я». Другие дарители не видят ничьих имён.</p></details>
+        <details><summary>Можно передумать после брони?</summary><p>Отдельной кнопки отмены пока нет. Бронь снимается сама через 5 дней, если не отметить покупку или перевод, и подарок снова становится свободным.</p></details>
+        <details><summary>Что если кто-то в складчине не перевёл свою часть?</summary><p>Через 5 дней после того, как он присоединился, его место освободится, и к подарку сможет присоединиться другой человек. Части тех, кто уже перевёл, сохраняются.</p></details>
+        <details><summary>Можно поменять ссылку, название или цену?</summary><p>Да, кнопкой-карандашом у подарка в своём списке. Режимы «уже купил сам» и «можно скинуться» задаются только при добавлении.</p></details>
+        <details><summary>Не подтянулась картинка или название. Это ошибка?</summary><p>Нет. Некоторые магазины не дают автоматически прочитать страницу товара. Подарок всё равно добавится, просто без фото, а название можно вписать вручную.</p></details>
+        <details><summary>Пропали данные после переустановки Telegram?</summary><p>Ваши списки хранятся на сервере. При следующем открытии приложение само найдёт их, создавать заново ничего не нужно.</p></details>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="slide" id="go">
+  <div class="inner single">
+    <div class="text">
+      <p class="count">Готово</p>
+      <h1>Соберите первый вишлист <span class="mark">за минуту</span></h1>
+      <p class="lead">Откройте бота в Telegram, нажмите «Создать свой вишлист» и вставьте ссылку на первый подарок.</p>
+      <a class="cta" href="https://t.me/wishhdesk_bot" target="_blank" rel="noopener">Открыть бота в Telegram</a>
+      <p class="handle">@wishhdesk_bot</p>
+    </div>
+  </div>
+</section>
+
+<script>
+(function () {
+  var slides = Array.prototype.slice.call(document.querySelectorAll(".slide"));
+  var nav = document.getElementById("dots");
+  var links = slides.map(function (s, i) {
+    var a = document.createElement("a");
+    a.href = "#" + s.id;
+    a.setAttribute("aria-label", "Слайд " + (i + 1));
+    nav.appendChild(a);
+    return a;
+  });
+  if (!("IntersectionObserver" in window)) return;
+  var io = new IntersectionObserver(function (entries) {
+    entries.forEach(function (e) {
+      if (!e.isIntersecting) return;
+      var i = slides.indexOf(e.target);
+      links.forEach(function (l, j) { l.classList.toggle("on", j === i); });
+    });
+  }, { threshold: 0.55 });
+  slides.forEach(function (s) { io.observe(s); });
+})();
+</script>
+
+</body>
+</html>
