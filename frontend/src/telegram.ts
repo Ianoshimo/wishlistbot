@@ -13,6 +13,7 @@ interface TelegramWebApp {
   onEvent: (event: string, cb: () => void) => void;
   ready: () => void;
   expand: () => void;
+  openLink?: (url: string) => void;
   MainButton: {
     setText: (text: string) => void;
     show: () => void;
@@ -95,4 +96,20 @@ export function getStartParam(): string | null {
 
 export function getMainButton() {
   return webApp?.MainButton ?? null;
+}
+
+// Внутри WebView Telegram (особенно Android) обычный <a href> на внешний
+// файл/календарь часто просто ничего не делает - внешние ссылки нужно
+// открывать через WebApp.openLink (только http/https). Вне Telegram -
+// обычная навигация.
+export function openExternalLink(url: string, httpFallback?: string) {
+  const insideTelegram = Boolean(webApp?.initData && webApp.openLink);
+  if (insideTelegram) {
+    const target = /^https?:/i.test(url) ? url : httpFallback;
+    if (target) {
+      webApp!.openLink!(target);
+      return;
+    }
+  }
+  window.location.href = url;
 }

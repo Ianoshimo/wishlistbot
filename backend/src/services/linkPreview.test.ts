@@ -4,6 +4,7 @@ import { readFileSync } from "node:fs";
 import {
   deriveNameFromUrl,
   isPreviewForRequestedProduct,
+  isPrivateIp,
   parseYandexMarketUrl,
 } from "./linkPreview.js";
 
@@ -104,4 +105,18 @@ test("Запасное название из ссылки Маркета", () =>
     deriveNameFromUrl("https://market.yandex.ru/product--naushniki-sony-wh-1000xm5/1779000001"),
     "Naushniki sony wh 1000xm5",
   );
+});
+
+// SSRF: какие адреса считаются внутренними (сервер не должен туда ходить
+// ни по ссылке пользователя, ни по редиректу).
+test("isPrivateIp: внутренние адреса", () => {
+  for (const ip of ["127.0.0.1", "127.1.2.3", "0.0.0.0", "10.0.0.5", "172.16.0.1", "172.31.255.255", "192.168.1.1", "169.254.169.254", "100.64.0.1", "100.127.255.255", "::1", "::", "fd12:3456::1", "fe80::1", "::ffff:127.0.0.1", "::ffff:10.0.0.1"]) {
+    assert.equal(isPrivateIp(ip), true, ip);
+  }
+});
+
+test("isPrivateIp: публичные адреса", () => {
+  for (const ip of ["8.8.8.8", "93.158.134.3", "172.15.0.1", "172.32.0.1", "100.63.0.1", "100.128.0.1", "2a02:6b8::2:242", "::ffff:8.8.8.8"]) {
+    assert.equal(isPrivateIp(ip), false, ip);
+  }
 });

@@ -26,8 +26,13 @@ export interface LinkPreview {
 
 const EMPTY: LinkPreview = { title: null, imageUrl: null };
 
-function isPrivateIp(ip: string): boolean {
-  if (ip === "127.0.0.1" || ip === "::1" || ip === "0.0.0.0") return true;
+export function isPrivateIp(rawIp: string): boolean {
+  // IPv4-mapped IPv6 (::ffff:127.0.0.1) - тот же IPv4 под другой записью.
+  const ip = rawIp.replace(/^::ffff:/i, "");
+  if (ip === "::1" || ip === "::") return true;
+  if (/^127\./.test(ip)) return true; // весь loopback 127.0.0.0/8
+  if (/^0\./.test(ip)) return true;
+  if (/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(ip)) return true; // CGNAT 100.64.0.0/10
   if (/^10\./.test(ip)) return true;
   if (/^192\.168\./.test(ip)) return true;
   if (/^169\.254\./.test(ip)) return true;
@@ -52,8 +57,31 @@ async function assertPublicHttpUrl(url: URL): Promise<void> {
   if (host === "localhost" || host.endsWith(".localhost")) {
     throw new Error("private_address");
   }
-  const resolved = await lookup(host);
-  if (isPrivateIp(resolved.address)) throw new Error("private_address");
+  // Все адреса, а не только первый: у хоста может быть и публичная, и
+  // внутренняя A-запись.
+  const resolved = await lookup(host, { all: true });
+  if (resolved.length === 0 || resolved.some((r) => isPrivateIp(r.address))) {
+    throw new Error("private_address");
+  }
+}
+
+const MAX_REDIRECTS = 5;
+
+// Редиректы - вручную, с той же проверкой адреса на каждом шаге: с
+// redirect: "follow" публичный сайт мог перенаправить сервер на
+// внутренний адрес (например, сервисы Railway), и проверка исходной
+// ссылки ничего бы не дала.
+async function fetchPublic(start: URL, init: RequestInit): Promise<Response> {
+  let current = start;
+  for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+    await assertPublicHttpUrl(current);
+    const res = await fetch(current, { ...init, redirect: "manual" });
+    if (res.status < 300 || res.status >= 400) return res;
+    const location = res.headers.get("location");
+    if (!location) return res;
+    current = new URL(location, current);
+  }
+  throw new Error("too_many_redirects");
 }
 
 const MAX_TITLE_WORDS = 5;
@@ -267,18 +295,11 @@ export async function fetchLinkPreview(rawUrl: string): Promise<LinkPreview> {
     return EMPTY;
   }
 
-  try {
-    await assertPublicHttpUrl(url);
-  } catch {
-    return EMPTY;
-  }
-
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
-    const res = await fetch(url, {
+    const res = await fetchPublic(url, {
       signal: controller.signal,
-      redirect: "follow",
       headers: {
         "User-Agent": USER_AGENT,
         Accept: "text/html,image/*;q=0.8,*/*;q=0.5",

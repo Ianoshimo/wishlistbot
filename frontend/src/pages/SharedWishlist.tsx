@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { absoluteApiUrl, api, describeError, formatOccasionDate, formatRub, type WishlistResponse } from "../api";
+import { openExternalLink } from "../telegram";
 import { ErrorBanner, Header, PriorityStar, Screen, StatusBadge, StoreBadge, Thumbnail } from "../components/UI";
 
 // Спека итерации 1, п.9 + флоу-итерация-1.md: первый переход по ссылке
@@ -126,6 +127,10 @@ export function SharedWishlist() {
           </div>
           <a
             href={absoluteApiUrl(`/api/wishlists/${slug}/occasion.ics`)}
+            onClick={(e) => {
+              e.preventDefault();
+              openExternalLink(absoluteApiUrl(`/api/wishlists/${slug}/occasion.ics`));
+            }}
             style={{
               flexShrink: 0,
               height: 32,

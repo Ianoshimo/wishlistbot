@@ -7,6 +7,14 @@ import { track } from "../services/analytics.js";
 
 export const bot = new Bot(env.BOT_TOKEN);
 
+// Без bot.catch grammY при long polling на любой ошибке внутри обработчика
+// (например, протухший callback query после долгой подгрузки превью
+// Wildberries) останавливает приём апдейтов целиком - бот молчит до
+// рестарта сервиса. Ошибка одного апдейта не должна ронять остальных.
+bot.catch((err) => {
+  console.error("[bot] Ошибка в обработчике апдейта", err.ctx?.update?.update_id, err.error);
+});
+
 // Ссылки на конкретный вишлист/сбор (t.me/<bot>?startapp=w_<slug> или
 // ?startapp=p_<poolId>) открывают мини-апп напрямую - Telegram сам кладёт
 // пейлоад в Telegram.WebApp.initDataUnsafe.start_param на стороне
@@ -89,14 +97,23 @@ bot.callbackQuery(["addlink:yes", "addlink:no"], async (ctx) => {
   }
 
   if (!ctx.from) return;
-  const wishlist = await getOrCreateWishlist(String(ctx.from.id));
-  const item = await createItemFromUrl(wishlist.id, url, undefined, undefined, undefined, undefined, {
-    source: "bot",
-    ownerUserId: wishlist.ownerId,
-  });
+  // Отвечаем на нажатие сразу: подгрузка превью (Wildberries через Apify)
+  // идёт до ~30 с, а callback query Telegram протухает раньше - поздний
+  // answerCallbackQuery падал с ошибкой.
+  await ctx.answerCallbackQuery({ text: "Добавляю…" });
+  await ctx.editMessageText("Добавляю - подтягиваю фото и название…");
 
-  await ctx.answerCallbackQuery({ text: "Добавлено в вишлист" });
-  await ctx.editMessageText(`Добавлено в вишлист: ${item.title}`);
+  try {
+    const wishlist = await getOrCreateWishlist(String(ctx.from.id));
+    const item = await createItemFromUrl(wishlist.id, url, undefined, undefined, undefined, undefined, {
+      source: "bot",
+      ownerUserId: wishlist.ownerId,
+    });
+    await ctx.editMessageText(`Добавлено в вишлист: ${item.title}`);
+  } catch (err) {
+    console.error("[bot] Не удалось добавить ссылку", err);
+    await ctx.editMessageText("Не получилось добавить ссылку - попробуйте ещё раз или добавьте её в мини-аппе.");
+  }
 });
 
 // "Поблагодарить дарителя" фото/видео (2026-10-02, по просьбе

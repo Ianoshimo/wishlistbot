@@ -4,7 +4,7 @@ import { InlineKeyboard } from "grammy";
 import { db } from "../db.js";
 import { reservationDeadline, resolveExpiredReservation } from "../services/reservation.js";
 import { resolveItem, serializeItemView } from "../services/itemView.js";
-import { resolveTelegramId, telegramIdSchema } from "../auth/telegramAuth.js";
+import { resolveTelegramId, resolveTelegramUser, telegramIdSchema } from "../auth/telegramAuth.js";
 import { upsertUserByTelegramId } from "../services/userUpsert.js";
 import { bot } from "../bot/bot.js";
 import { monthDay, track, type ReserveMode } from "../services/analytics.js";
@@ -99,7 +99,12 @@ export async function itemRoutes(app: FastifyInstance) {
     const body = z
       .object({ telegramId: z.string().optional(), revealIdentity: z.boolean().optional() })
       .parse(req.body);
-    const telegramId = requireTelegramId(req, body.telegramId);
+    // "Дарить неанонимно": имя дарителя берём из проверенной подписи
+    // initData - иначе у пришедшего по ссылке "Поделиться" (минуя /start)
+    // firstName навсегда пустой и получатель видит "Дарит:" без имени.
+    const initData = req.headers["x-telegram-init-data"];
+    const tgUser = resolveTelegramUser(typeof initData === "string" ? initData : undefined, body.telegramId);
+    const telegramId = tgUser?.id ?? null;
     if (!telegramId) return reply.code(401).send({ error: "unauthorized" });
 
     const item = await resolveExpiredReservation(itemId);
@@ -114,7 +119,10 @@ export async function itemRoutes(app: FastifyInstance) {
       return reply.code(403).send({ error: "cannot_reserve_own_item" });
     }
 
-    const user = await upsertUserByTelegramId(telegramId);
+    const user = await upsertUserByTelegramId(telegramId, {
+      firstName: tgUser?.firstName,
+      username: tgUser?.username,
+    });
 
     // "Скинуться на подарок" (CLAUDE.md, 2026-10-02) - несколько
     // дарителей делят одну позицию, каждый бронирует свою долю отдельной

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { absoluteApiUrl, api, describeError, formatOccasionDate } from "../api";
 import { CopyRow, ErrorBanner, Field, PrimaryButton } from "./UI";
+import { openExternalLink } from "../telegram";
 
 // Содержимое bottom sheet "Календарь" (CLAUDE.md, 2026-10-02, "продумай
 // бизнесово как пользователю будет удобно синхронизировать календари") -
@@ -154,6 +155,12 @@ export function CalendarSheet({
           <>
             <a
               href={webcalUrl}
+              onClick={(e) => {
+                e.preventDefault();
+                // webcal:// Telegram открыть не умеет - внутри него уходим на
+                // https-версию фида, календарь телефона предложит подписку.
+                openExternalLink(webcalUrl, httpsUrl);
+              }}
               style={{
                 display: "flex",
                 alignItems: "center",
