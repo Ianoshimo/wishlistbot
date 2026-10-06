@@ -1,6 +1,5 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Home } from "./pages/Home";
-import { AddItem } from "./pages/AddItem";
 import { ShareWishlist } from "./pages/ShareWishlist";
 import { SharedWishlist } from "./pages/SharedWishlist";
 import { ItemDetail } from "./pages/ItemDetail";
@@ -22,7 +21,6 @@ export function App() {
       <Routes>
         <Route path="/" element={<Home />} />
         <Route path="/w/:slug" element={<SharedWishlist />} />
-        <Route path="/w/:slug/add" element={<AddItem />} />
         <Route path="/w/:slug/share" element={<ShareWishlist />} />
         <Route path="/item/:itemId" element={<ItemDetail />} />
         <Route path="/p/new" element={<PoolCreate />} />

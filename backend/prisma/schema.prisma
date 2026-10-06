@@ -69,6 +69,11 @@ model Item {
   // routes/items.ts (отдаёт номер телефона только после брони).
   selfPurchased Boolean @default(false)
 
+  // "Хочу больше всего" - тоггл получателя, когда позиций много и
+  // дарителю неочевидно, с чего начать. Стандартный паттерн вишлистов
+  // (как у Amazon) - см. CLAUDE.md, 2026-10-01.
+  priority Boolean @default(false)
+
   reservedByUserId String?
   reservedBy       User?     @relation("ReservedBy", fields: [reservedByUserId], references: [id])
   reservedAt       DateTime?

@@ -1,29 +1,44 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
-import { api, describeError } from "../api";
-import { ErrorBanner, Header, PrimaryButton, Screen } from "../components/UI";
+import { api, describeError, type Item } from "../api";
+import { ErrorBanner, Field, PrimaryButton } from "./UI";
 
-// Беклог В-12: раньше поля никак не проверялись на клиенте - невалидный
-// URL и отрицательная/нулевая цена уходили прямо на бэкенд и там тихо
-// падали (см. Б-4). Проверяем здесь же, до сетевого запроса.
-function validationError(url: string, price: string, selfPurchased: boolean, sbpPhone: string): string | null {
+// Форма "Добавить позицию" - раньше отдельная страница (/w/:slug/add),
+// теперь содержимое bottom sheet на MyWishlist (CLAUDE.md, 2026-10-01:
+// "Bottom sheet для 'Добавить позицию' ... вместо перехода на отдельную
+// страницу - быстрее ощущается"). Логика валидации не изменилась.
+
+const MAX_CONTRIBUTORS_CAP = 10;
+
+function validationError(
+  url: string,
+  price: string,
+  selfPurchased: boolean,
+  sbpPhone: string,
+  split: boolean,
+  maxContributors: string,
+): string | null {
   if (!/^https?:\/\/.+/i.test(url)) return "Ссылка должна начинаться с http:// или https://";
   if (price && Number(price) <= 0) return "Цена должна быть больше нуля";
   if (selfPurchased && sbpPhone.replace(/\D/g, "").length < 10) return "Укажите номер телефона для перевода";
+  if (split) {
+    const n = Number(maxContributors);
+    if (!Number.isInteger(n) || n < 2 || n > MAX_CONTRIBUTORS_CAP) {
+      return `Сколько человек может скинуться - от 2 до ${MAX_CONTRIBUTORS_CAP}`;
+    }
+  }
   return null;
 }
 
-export function AddItem() {
-  const { slug = "" } = useParams();
-  const navigate = useNavigate();
+export function AddItemForm({ slug, onAdded }: { slug: string; onAdded: (item: Item) => void }) {
   const [url, setUrl] = useState("");
   const [title, setTitle] = useState("");
   const [price, setPrice] = useState("");
-  // "Уже купил(а) сам(а)" (решение 2026-10-02, по просьбе пользователя) -
-  // даритель переводит деньги напрямую получателю по СБП вместо похода в
-  // магазин, см. ItemDetail.tsx и backend/src/services/... (User.sbpPhone).
   const [selfPurchased, setSelfPurchased] = useState(false);
   const [sbpPhone, setSbpPhone] = useState("");
+  // "Скинуться на подарок" (CLAUDE.md, 2026-10-02) - имеет смысл только
+  // вместе с selfPurchased, см. backend/src/routes/wishlists.ts.
+  const [split, setSplit] = useState(false);
+  const [maxContributors, setMaxContributors] = useState("2");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,7 +57,7 @@ export function AddItem() {
   }, []);
 
   const submit = async () => {
-    const invalid = validationError(url, price, selfPurchased, sbpPhone);
+    const invalid = validationError(url, price, selfPurchased, sbpPhone, split, maxContributors);
     if (invalid) {
       setError(invalid);
       return;
@@ -50,14 +65,15 @@ export function AddItem() {
     setSaving(true);
     setError(null);
     try {
-      await api.addItem(slug, {
+      const item = await api.addItem(slug, {
         url,
         title: title || undefined,
         price: price ? Math.round(Number(price) * 100) : undefined,
         selfPurchased: selfPurchased || undefined,
         sbpPhone: selfPurchased ? sbpPhone.trim() : undefined,
+        maxContributors: selfPurchased && split ? Number(maxContributors) : undefined,
       });
-      navigate("/");
+      onAdded(item);
     } catch (err) {
       setError(describeError(err));
     } finally {
@@ -66,9 +82,8 @@ export function AddItem() {
   };
 
   return (
-    <Screen>
-      <Header title="Новая позиция" backTo="/" />
-      <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 20, flexGrow: 1 }}>
+    <>
+      <div style={{ padding: "4px 20px 20px", display: "flex", flexDirection: "column", gap: 20 }}>
         {error && <ErrorBanner message={error} />}
         <Field label="Ссылка на товар" value={url} onChange={setUrl} placeholder="https://ozon.ru/product/..." type="url" />
         <Field label="Название (необязательно)" value={title} onChange={setTitle} placeholder="Например: наушники Sony" />
@@ -111,50 +126,52 @@ export function AddItem() {
             type="tel"
           />
         )}
+
+        {selfPurchased && (
+          <label
+            style={{
+              display: "flex",
+              gap: 12,
+              alignItems: "flex-start",
+              padding: 14,
+              borderRadius: 14,
+              background: "var(--surface)",
+              border: "1px solid var(--border)",
+              cursor: "pointer",
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={split}
+              onChange={(e) => setSplit(e.target.checked)}
+              style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }}
+            />
+            <span>
+              <span style={{ display: "block", fontSize: 14, fontWeight: 600 }}>
+                Можно скинуться нескольким
+              </span>
+              <span style={{ display: "block", fontSize: 13, color: "var(--text-secondary)", marginTop: 2 }}>
+                Каждый переведёт свою часть по тому же номеру и отметит перевод отдельно
+              </span>
+            </span>
+          </label>
+        )}
+
+        {selfPurchased && split && (
+          <Field
+            label={`Сколько человек может скинуться (2-${MAX_CONTRIBUTORS_CAP})`}
+            value={maxContributors}
+            onChange={setMaxContributors}
+            type="number"
+            min="2"
+          />
+        )}
       </div>
-      <div style={{ padding: "12px 16px 20px" }}>
+      <div style={{ padding: "0 20px 20px" }}>
         <PrimaryButton onClick={submit} disabled={!url || saving} style={{ width: "100%" }}>
           {saving ? "Добавляем…" : "Добавить в вишлист"}
         </PrimaryButton>
       </div>
-    </Screen>
-  );
-}
-
-function Field({
-  label,
-  value,
-  onChange,
-  placeholder,
-  type = "text",
-  min,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
-  type?: string;
-  min?: string;
-}) {
-  return (
-    <label style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-      <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)" }}>{label}</span>
-      <input
-        type={type}
-        value={value}
-        placeholder={placeholder}
-        min={min}
-        onChange={(e) => onChange(e.target.value)}
-        style={{
-          height: 48,
-          borderRadius: 12,
-          border: "1px solid var(--border)",
-          background: "var(--surface)",
-          color: "var(--text-primary)",
-          padding: "0 14px",
-          fontSize: 16,
-        }}
-      />
-    </label>
+    </>
   );
 }

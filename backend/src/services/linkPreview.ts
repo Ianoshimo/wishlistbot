@@ -75,7 +75,7 @@ function capitalize(s: string): string {
   return s ? s[0].toUpperCase() + s.slice(1) : s;
 }
 
-const MARKETPLACE_NAMES: Record<string, string> = {
+export const MARKETPLACE_NAMES: Record<string, string> = {
   "ozon.ru": "Ozon",
   "wildberries.ru": "Wildberries",
   "market.yandex.ru": "Яндекс.Маркет",
@@ -136,6 +136,18 @@ export function deriveNameFromUrl(rawUrl: string): string {
   }
 
   return brand ? `Товар (${brand})` : "Товар по ссылке";
+}
+
+// Бейдж магазина на карточке позиции (CLAUDE.md, 2026-10-01) - хост уже
+// известен бэкенду из url позиции, просто визуальный штрих для дарителя.
+// Не каждый хост узнаём - тогда бейджа просто нет, это ожидаемо.
+export function detectStore(rawUrl: string): string | null {
+  try {
+    const host = new URL(rawUrl).hostname.replace(/^www\./, "");
+    return MARKETPLACE_NAMES[host] ?? null;
+  } catch {
+    return null;
+  }
 }
 
 function extractMeta(html: string, property: string): string | null {

@@ -94,3 +94,22 @@ export function resolveTelegramId(
   }
   return null;
 }
+
+// "Дарить неанонимно" (CLAUDE.md, 2026-10-02) показывает получателю
+// firstName/username дарителя - тот же человек, но без имени, если он
+// впервые пришёл в мини-апп по ссылке, минуя /start (upsertUserByTelegramId
+// раньше создавал запись с firstName: "" и больше её не обновлял). Тут
+// же, где уже проверяем подпись initData, достаём и профиль - дёшево,
+// подпись и так разобрана. В dev-режиме (без initData) профиля нет -
+// это ожидаемо, не блокирует разработку без реального Telegram.
+export function resolveTelegramUser(
+  initData: string | undefined,
+  bodyTelegramId: string | undefined,
+): TelegramAuthUser | null {
+  const verified = initData ? verifyInitData(initData) : null;
+  if (verified) return verified;
+  if (env.ALLOW_DEV_TELEGRAM_ID && bodyTelegramId && telegramIdSchema.test(bodyTelegramId)) {
+    return { id: bodyTelegramId, firstName: "" };
+  }
+  return null;
+}

@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router-dom";
 
 export function Screen({ children }: { children: ReactNode }) {
@@ -178,6 +178,276 @@ export function CopyRow({ label, value }: { label: string; value: string }) {
         </button>
       </div>
     </div>
+  );
+}
+
+// Редизайн "Электрик" (CLAUDE.md, 2026-10-01): FAB вместо мелкой иконки в
+// шапке - крупнее, удобнее дотянуться большим пальцем на одной руке.
+export function Fab({ onClick, label }: { onClick: () => void; label: string }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={label}
+      style={{
+        position: "fixed",
+        right: 20,
+        bottom: 24,
+        width: 56,
+        height: 56,
+        borderRadius: 18,
+        background: "var(--accent)",
+        color: "#ffffff",
+        border: "none",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        boxShadow: "0 10px 24px rgba(77, 62, 153, 0.35)",
+        zIndex: 20,
+      }}
+    >
+      <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+        <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+      </svg>
+    </button>
+  );
+}
+
+// Карточка прогресса вверху списка ("3 из 7 куплено" + полоска) -
+// редизайн "Электрик": лайм-акцент (--highlight) зарезервирован ровно для
+// одного такого "особого" момента на экране, не для общего accent.
+export function ProgressCard({ total, done }: { total: number; done: number }) {
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+  return (
+    <div
+      style={{
+        margin: "0 12px 10px",
+        padding: 16,
+        borderRadius: 16,
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
+      }}
+    >
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+        <span className="font-display" style={{ fontSize: 16, fontWeight: 700 }}>
+          {done} из {total} куплено
+        </span>
+        <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>{pct}%</span>
+      </div>
+      <div style={{ height: 8, borderRadius: 999, background: "var(--highlight-soft)", overflow: "hidden" }}>
+        <div
+          style={{
+            height: "100%",
+            width: `${pct}%`,
+            borderRadius: 999,
+            background: "var(--highlight)",
+            transition: "width 0.3s ease",
+          }}
+        />
+      </div>
+    </div>
+  );
+}
+
+const STORE_COLORS: Record<string, string> = {
+  Ozon: "#005bff",
+  Wildberries: "#cb11ab",
+  "Яндекс.Маркет": "#fc3f1d",
+  Авито: "#00a046",
+  AliExpress: "#e62e04",
+};
+
+// Бейдж магазина на карточке позиции (CLAUDE.md, 2026-10-01) - хост уже
+// известен бэкенду (item.store, см. api.ts), чисто визуальный штрих.
+export function StoreBadge({ store }: { store: string | null }) {
+  if (!store) return null;
+  const color = STORE_COLORS[store] ?? "var(--text-secondary)";
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 4,
+        fontSize: 11,
+        fontWeight: 600,
+        color,
+      }}
+    >
+      <span style={{ width: 6, height: 6, borderRadius: "50%", background: color, flexShrink: 0 }} />
+      {store}
+    </div>
+  );
+}
+
+// Приоритет позиции ("хочу больше всего" - CLAUDE.md, 2026-10-01).
+// editable=false - просто индикатор для дарителя (SharedWishlist), не
+// триггерит никакого запроса.
+export function PriorityStar({
+  active,
+  editable,
+  onClick,
+}: {
+  active: boolean;
+  editable: boolean;
+  onClick?: () => void;
+}) {
+  const star = (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill={active ? "var(--highlight)" : "none"}>
+      <path
+        d="M12 3l2.7 6.2 6.8.6-5.1 4.5 1.6 6.6L12 17.3 5.9 20.9l1.6-6.6-5.1-4.5 6.8-.6L12 3z"
+        stroke={active ? "var(--highlight)" : "var(--text-secondary)"}
+        strokeWidth="1.6"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+  if (!editable) {
+    return active ? <div style={{ flexShrink: 0 }}>{star}</div> : null;
+  }
+  return (
+    <button
+      onClick={onClick}
+      aria-label={active ? "Убрать из приоритетных" : "Отметить как желанное больше всего"}
+      style={{
+        width: 32,
+        height: 32,
+        flexShrink: 0,
+        borderRadius: 8,
+        background: "transparent",
+        border: "none",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      {star}
+    </button>
+  );
+}
+
+// Bottom sheet для "Добавить позицию" и СБП-карточки вместо перехода на
+// отдельную страницу (CLAUDE.md, 2026-10-01) - быстрее ощущается, не
+// теряешь контекст списка/подарка за собой.
+export function BottomSheet({
+  open,
+  onClose,
+  title,
+  children,
+}: {
+  open: boolean;
+  onClose: () => void;
+  title: string;
+  children: ReactNode;
+}) {
+  // Esc закрывает на десктопе/вне Telegram - внутри самого Telegram
+  // клавиатуры в таком смысле нет, но это бесплатно и не мешает.
+  useEffect(() => {
+    if (!open) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [open, onClose]);
+
+  if (!open) return null;
+
+  return (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 30,
+        display: "flex",
+        alignItems: "flex-end",
+        justifyContent: "center",
+      }}
+    >
+      <div
+        onClick={onClose}
+        style={{ position: "absolute", inset: 0, background: "rgba(10, 8, 20, 0.5)" }}
+      />
+      <div
+        style={{
+          position: "relative",
+          width: "100%",
+          maxWidth: 480,
+          maxHeight: "88vh",
+          overflowY: "auto",
+          background: "var(--bg)",
+          borderTopLeftRadius: 20,
+          borderTopRightRadius: 20,
+          boxShadow: "0 -8px 30px rgba(0,0,0,0.25)",
+          animation: "wishlistbot-sheet-up 0.2s ease-out",
+        }}
+      >
+        <div style={{ display: "flex", justifyContent: "center", padding: "10px 0 0" }}>
+          <div style={{ width: 36, height: 4, borderRadius: 999, background: "var(--border)" }} />
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 20px" }}>
+          <div className="font-display" style={{ flexGrow: 1, fontSize: 17, fontWeight: 700 }}>
+            {title}
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Закрыть"
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 9,
+              background: "var(--surface)",
+              border: "none",
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "var(--text-secondary)",
+            }}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+export function Field({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+  min,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  type?: string;
+  min?: string;
+}) {
+  return (
+    <label style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      <span style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)" }}>{label}</span>
+      <input
+        type={type}
+        value={value}
+        placeholder={placeholder}
+        min={min}
+        onChange={(e) => onChange(e.target.value)}
+        style={{
+          height: 48,
+          borderRadius: 12,
+          border: "1px solid var(--border)",
+          background: "var(--surface)",
+          color: "var(--text-primary)",
+          padding: "0 14px",
+          fontSize: 16,
+        }}
+      />
+    </label>
   );
 }
 
