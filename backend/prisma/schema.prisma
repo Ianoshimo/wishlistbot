@@ -104,9 +104,9 @@ model Item {
   // делят одну позицию, каждый бронирует свою долю через GiftShare.
   // maxContributors = 1 (по умолчанию) - обычный classic-путь на
   // reservedByUserId/TTL выше, без изменений. maxContributors > 1 -
-  // режим "скинуться", TTL на недооплаченную долю сознательно не сделан
-  // в v1 (см. GiftShare), и само значение не редактируется после
-  // создания позиции.
+  // режим "скинуться", у неоплаченной доли тот же TTL, что у брони
+  // (см. GiftShare), само значение не редактируется после создания
+  // позиции.
   maxContributors Int         @default(1)
   giftShares      GiftShare[]
 
@@ -133,6 +133,10 @@ model GiftShare {
   // брони, где это поле одно на Item.reservedByVisible).
   visible Boolean @default(false)
 
+  // TTL доли (2026-10-07) считается от createdAt - отдельного поля нет:
+  // неоплаченная доля старше RESERVATION_TTL_DAYS (5 дней, как у брони)
+  // снимается лениво при чтении, оплаченная - никогда. См.
+  // services/reservation.ts, resolveExpiredGiftShares.
   createdAt DateTime  @default(now())
   paidAt    DateTime?
 
