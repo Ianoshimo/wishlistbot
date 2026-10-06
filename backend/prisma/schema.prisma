@@ -36,6 +36,7 @@ model User {
   reservations  Item[]         @relation("ReservedBy")
   pools         Pool[]         @relation("OrganizedBy")
   contributions Contribution[]
+  giftShares    GiftShare[]
 }
 
 model Wishlist {
@@ -79,7 +80,50 @@ model Item {
   reservedAt       DateTime?
   reservationTtl   DateTime? // ресёрч спеки: 5 дней от reservedAt
 
+  // "Дарить неанонимно" (CLAUDE.md, 2026-10-02) - даритель один раз, в
+  // момент брони, решает раскрыть ли владельцу вишлиста, что дарит
+  // именно он. По умолчанию анонимность не меняется (п.2 спеки) - имя
+  // отдаётся наружу только isOwnerViewer и только когда true, см.
+  // services/itemView.ts.
+  reservedByVisible Boolean @default(false)
+
+  // "Скинуться на подарок" (CLAUDE.md, 2026-10-02) - несколько дарителей
+  // делят одну позицию, каждый бронирует свою долю через GiftShare.
+  // maxContributors = 1 (по умолчанию) - обычный classic-путь на
+  // reservedByUserId/TTL выше, без изменений. maxContributors > 1 -
+  // режим "скинуться", TTL на недооплаченную долю сознательно не сделан
+  // в v1 (см. GiftShare), и само значение не редактируется после
+  // создания позиции.
+  maxContributors Int         @default(1)
+  giftShares      GiftShare[]
+
   createdAt DateTime @default(now())
+}
+
+model GiftShare {
+  id     String @id @default(cuid())
+  itemId String
+  // onDelete: Cascade - до этой миграции DELETE /api/items/:itemId падал
+  // 500 (нарушение внешнего ключа), как только у позиции появлялась хотя
+  // бы одна доля (см. CLAUDE.md, 2026-10-02).
+  item   Item   @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  // Доверительная самоотметка - каждый дольщик отмечает свою часть
+  // независимо, не дожидаясь остальных; реальной обработки платежа нет,
+  // СБП и так идёт вне платформы, как и весь selfPurchased-флоу.
+  paid Boolean @default(false)
+
+  // "Дарить неанонимно" для конкретной доли - своя копия чекбокса на
+  // каждого дольщика, раз у каждого выбор свой (в отличие от classic-
+  // брони, где это поле одно на Item.reservedByVisible).
+  visible Boolean @default(false)
+
+  createdAt DateTime  @default(now())
+  paidAt    DateTime?
+
+  @@unique([itemId, userId])
 }
 
 enum PoolStatus {
