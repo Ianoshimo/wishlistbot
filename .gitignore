@@ -4,3 +4,9 @@ dist/
 .env.local
 *.log
 .DS_Store
+
+# Локальный тулинг Claude Code-сессии (установленные скиллы и т.п.),
+# не часть приложения.
+.agents/
+.claude/skills/
+skills-lock.json
