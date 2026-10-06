@@ -1,11 +1,12 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { z } from "zod";
 import { db } from "../db.js";
-import { resolveExpiredReservation } from "../services/reservation.js";
-import { deriveNameFromUrl, fetchLinkPreview } from "../services/linkPreview.js";
-import { fetchWildberriesViaApify, isWildberriesUrl } from "../services/wildberriesApify.js";
+import { resolveItem, serializeItemView } from "../services/itemView.js";
+import { createItemFromUrl } from "../services/itemCreate.js";
 import { resolveTelegramId } from "../auth/telegramAuth.js";
 import { upsertUserByTelegramId } from "../services/userUpsert.js";
+import { buildIcsCalendar } from "../services/ics.js";
+import { env } from "../env.js";
 
 // Привязка логина через Telegram (2026-10-02): telegramId больше не
 // берётся из тела запроса напрямую - только из проверенной подписи
@@ -18,38 +19,16 @@ function requireTelegramId(req: FastifyRequest, bodyTelegramId: string | undefin
 
 // Спека итерации 1, п.1, п.6, п.9: получатель ведёт вишлист, доступ по
 // ссылке без отдельной регистрации, личность дарителя не раскрывается
-// нигде в ответах (см. serializeItem ниже).
-
-// sbpPhone передаётся отдельно (не берётся из item), потому что это
-// реквизит владельца вишлиста, а не самой позиции - см. User.sbpPhone в
-// schema.prisma.
-//
-// Находка Н-1 полного QA-прогона (2026-10-01): раньше номер отдавался
-// всем подряд, как только status !== "available" - не только держателю
-// брони. Это настоящий номер телефона, привязанный к реальному переводу
-// денег - отдаём строго при reservedByMe, та же граница, что и у кнопки
-// "Отметить купленным" (см. В-6, routes/items.ts).
-function serializeItem(
-  item: Awaited<ReturnType<typeof db.item.findFirstOrThrow>>,
-  ownerSbpPhone: string | null,
-  reservedByMe: boolean,
-) {
-  return {
-    id: item.id,
-    url: item.url,
-    title: item.title,
-    price: item.price,
-    imageUrl: item.imageUrl,
-    status: item.status,
-    selfPurchased: item.selfPurchased,
-    sbpPhone: item.selfPurchased && reservedByMe ? ownerSbpPhone : null,
-    reservedByMe,
-    // reservedByUserId сознательно не отдаём наружу - п.2 спеки:
-    // "личность дарителя не показывается никому, включая получателя".
-  };
-}
+// нигде в ответах (см. services/itemView.ts serializeItemView).
 
 const PHONE_RE = /^[\d\s()+-]{10,20}$/;
+const MAX_CONTRIBUTORS_CAP = 10;
+// "Сделай 3 и названия для них" (CLAUDE.md, 2026-10-02) - продуктовый
+// лимит, не структурное ограничение БД (специально не уникальный
+// индекс/constraint - проще поднять позже, если понадобится). Раньше
+// было жёстко "1" (Беклог Н-2) - вместо него теперь явный "до 3",
+// проверяется здесь же, при создании.
+const WISHLIST_LIMIT = 3;
 
 export async function wishlistRoutes(app: FastifyInstance) {
   // Телефон для СБП - реквизит человека, не позиции (см. User.sbpPhone) -
@@ -60,30 +39,60 @@ export async function wishlistRoutes(app: FastifyInstance) {
     const telegramId = requireTelegramId(req, query.telegramId);
     if (!telegramId) return reply.code(401).send({ error: "unauthorized" });
 
+    // К этому моменту у пользователя уже есть запись User - её создаёт
+    // POST /api/wishlists при первом открытии мини-аппа (см. Home.tsx),
+    // раньше, чем мог бы отрендериться что-либо, что вызывает /api/me.
     const user = await db.user.findUnique({ where: { telegramId: BigInt(telegramId) } });
-    return { sbpPhone: user?.sbpPhone ?? null };
+    return { sbpPhone: user?.sbpPhone ?? null, calendarToken: user?.calendarToken ?? null };
   });
 
+  // До 3 вишлистов на человека (CLAUDE.md, 2026-10-02) - в отличие от
+  // старого поведения (Беклог Н-2, "один владелец - один вишлист"),
+  // каждый вызов теперь создаёт НОВЫЙ список, а не находит существующий.
+  // Восстановление при потере localStorage, которое раньше решал этот
+  // же эндпоинт, переехало на фронт - см. GET /api/wishlists/mine ниже
+  // и MyWishlist.tsx (сначала смотрим, что уже есть, создаём только
+  // если вообще ничего нет - тот же Н-2 сценарий, просто в другом месте).
   app.post("/api/wishlists", async (req, reply) => {
-    const body = z.object({ telegramId: z.string().optional() }).parse(req.body);
+    const body = z
+      .object({ telegramId: z.string().optional(), title: z.string().min(1).max(60).optional() })
+      .parse(req.body);
     const telegramId = requireTelegramId(req, body.telegramId);
     if (!telegramId) return reply.code(401).send({ error: "unauthorized" });
 
     const owner = await upsertUserByTelegramId(telegramId);
-
-    // Беклог Н-2: раньше каждый вызов создавал новый вишлист, без
-    // проверки, есть ли уже один у этого владельца - при потере
-    // localStorage на клиенте (переустановка, автоочистка WebView)
-    // следующий вход молча плодил новый пустой вишлист, старый с уже
-    // добавленными позициями оставался недостижим ни через UI, ни через
-    // API. Теперь находим и возвращаем существующий вместо нового.
-    const existing = await db.wishlist.findFirst({ where: { ownerId: owner.id } });
-    if (existing) {
-      return reply.code(200).send({ id: existing.id, slug: existing.slug });
+    const count = await db.wishlist.count({ where: { ownerId: owner.id } });
+    if (count >= WISHLIST_LIMIT) {
+      return reply.code(409).send({ error: "wishlist_limit_reached" });
     }
 
-    const wishlist = await db.wishlist.create({ data: { ownerId: owner.id } });
-    return reply.code(201).send({ id: wishlist.id, slug: wishlist.slug });
+    const wishlist = await db.wishlist.create({
+      data: { ownerId: owner.id, title: body.title ?? `Вишлист ${count + 1}` },
+    });
+    return reply.code(201).send({ id: wishlist.id, slug: wishlist.slug, title: wishlist.title });
+  });
+
+  // Список своих вишлистов для переключателя (CLAUDE.md, 2026-10-02) -
+  // и восстановления при потере localStorage (тот самый сценарий из
+  // Н-2: переустановка, автоочистка WebView - теперь это читает фронт
+  // сам, прежде чем решить, создавать новый список или нет).
+  app.get("/api/wishlists/mine", async (req, reply) => {
+    const query = z.object({ telegramId: z.string().optional() }).parse(req.query);
+    const telegramId = requireTelegramId(req, query.telegramId);
+    if (!telegramId) return reply.code(401).send({ error: "unauthorized" });
+
+    const user = await db.user.findUnique({ where: { telegramId: BigInt(telegramId) } });
+    if (!user) return { wishlists: [] };
+
+    const wishlists = await db.wishlist.findMany({
+      where: { ownerId: user.id },
+      orderBy: { createdAt: "asc" },
+      include: { _count: { select: { items: true } } },
+    });
+
+    return {
+      wishlists: wishlists.map((w) => ({ slug: w.slug, title: w.title, itemCount: w._count.items })),
+    };
   });
 
   app.get("/api/wishlists/:slug", async (req, reply) => {
@@ -111,16 +120,108 @@ export async function wishlistRoutes(app: FastifyInstance) {
     const viewer = telegramId ? await db.user.findUnique({ where: { telegramId: BigInt(telegramId) } }) : null;
 
     const items = await Promise.all(
-      wishlist.items.map((i) => resolveExpiredReservation(i.id)),
+      wishlist.items.map((i) => resolveItem(i.id)),
     );
 
     return {
       slug: wishlist.slug,
       isOwner,
+      title: wishlist.title,
+      // Повод (CLAUDE.md, 2026-10-02) - необязательный, задаёт владелец
+      // через PATCH ниже. Публично виден всем, у кого есть ссылка -
+      // ровно та же анонимная видимость, что и у самого списка позиций.
+      occasionTitle: wishlist.occasionTitle,
+      occasionDate: wishlist.occasionDate,
       items: items.map((i) =>
-        serializeItem(i, wishlist.owner.sbpPhone, Boolean(viewer && i.reservedByUserId === viewer.id)),
+        serializeItemView(i, i.giftShares, wishlist.owner.sbpPhone, viewer?.id ?? null, isOwner),
       ),
     };
+  });
+
+  // Повод вишлиста (CLAUDE.md, 2026-10-02, "продумай бизнесово как
+  // пользователю будет удобно синхронизировать календари") - лёгкая
+  // замена старой версии календаря, завязанной на Pool (деньги,
+  // итерация 2, отключена от экранов) - живёт на самом вишлисте, не
+  // требует денег/сбора. Только владелец, и только оба поля вместе -
+  // date без title показывал бы в календаре "Без названия", а title без
+  // date вообще некуда положить.
+  // title - имя самого списка (переключатель, "сделай 3 и названия для
+  // них" - CLAUDE.md, 2026-10-02); occasionTitle/occasionDate - повод с
+  // датой для календаря (другая фича, см. комментарий у Item выше). Оба
+  // независимы друг от друга и необязательны в каждом вызове - но если
+  // трогаем повод, то оба его поля вместе (date без title показывал бы
+  // в календаре "Без названия", title без date вообще некуда положить).
+  app.patch("/api/wishlists/:slug", async (req, reply) => {
+    const { slug } = z.object({ slug: z.string() }).parse(req.params);
+    const body = z
+      .object({
+        telegramId: z.string().optional(),
+        title: z.string().min(1).max(60).optional(),
+        occasionTitle: z.string().min(1).max(80).nullable().optional(),
+        occasionDate: z.string().datetime().nullable().optional(),
+      })
+      .refine((b) => (b.occasionTitle !== undefined) === (b.occasionDate !== undefined), {
+        message: "occasion_title_and_date_together",
+      })
+      .refine((b) => b.occasionTitle === undefined || (b.occasionTitle === null) === (b.occasionDate === null), {
+        message: "occasion_title_and_date_together",
+      })
+      .parse(req.body);
+
+    const telegramId = requireTelegramId(req, body.telegramId);
+    if (!telegramId) return reply.code(401).send({ error: "unauthorized" });
+
+    const wishlist = await db.wishlist.findUnique({ where: { slug }, include: { owner: true } });
+    if (!wishlist) return reply.code(404).send({ error: "wishlist_not_found" });
+    if (wishlist.owner.telegramId !== BigInt(telegramId)) {
+      return reply.code(403).send({ error: "not_your_wishlist" });
+    }
+
+    const updated = await db.wishlist.update({
+      where: { slug },
+      data: {
+        ...(body.title !== undefined ? { title: body.title } : {}),
+        ...(body.occasionTitle !== undefined
+          ? {
+              occasionTitle: body.occasionTitle,
+              occasionDate: body.occasionDate ? new Date(body.occasionDate) : null,
+            }
+          : {}),
+      },
+    });
+
+    return {
+      title: updated.title,
+      occasionTitle: updated.occasionTitle,
+      occasionDate: updated.occasionDate,
+    };
+  });
+
+  // Разовое "Добавить в календарь" (CLAUDE.md, 2026-10-02) - главный,
+  // низкотрудозатратный сценарий для дарителя: один тап/скачивание,
+  // работает в Apple Calendar/Google Calendar/Яндекс.Календаре без
+  // авторизации и подписки. Публичный, как и сам вишлист - доступен
+  // всем, у кого есть ссылка.
+  app.get("/api/wishlists/:slug/occasion.ics", async (req, reply) => {
+    const { slug } = z.object({ slug: z.string() }).parse(req.params);
+    const wishlist = await db.wishlist.findUnique({ where: { slug } });
+    if (!wishlist) return reply.code(404).send({ error: "wishlist_not_found" });
+    if (!wishlist.occasionTitle || !wishlist.occasionDate) {
+      return reply.code(404).send({ error: "occasion_not_set" });
+    }
+
+    const ics = buildIcsCalendar([
+      {
+        uid: `occasion-${wishlist.id}`,
+        title: wishlist.occasionTitle,
+        date: wishlist.occasionDate,
+        url: `${env.MINI_APP_URL}/w/${wishlist.slug}`,
+      },
+    ]);
+
+    reply.header("Content-Type", "text/calendar; charset=utf-8");
+    reply.header("Content-Disposition", `attachment; filename="${wishlist.slug}.ics"`);
+    return ics;
   });
 
   app.post("/api/wishlists/:slug/items", async (req, reply) => {
@@ -140,8 +241,16 @@ export async function wishlistRoutes(app: FastifyInstance) {
         // СБП вместо похода в магазин, см. User.sbpPhone.
         selfPurchased: z.boolean().optional(),
         sbpPhone: z.string().regex(PHONE_RE, "invalid_phone").optional(),
+        // "Скинуться на подарок" (CLAUDE.md, 2026-10-02) - получатель
+        // задаёт, сколько дарителей могут разделить этот перевод. Имеет
+        // смысл только вместе с selfPurchased - проверяется ниже.
+        maxContributors: z.number().int().min(1).max(MAX_CONTRIBUTORS_CAP).optional(),
       })
       .parse(req.body);
+
+    if (body.maxContributors && body.maxContributors > 1 && !body.selfPurchased) {
+      return reply.code(400).send({ error: "validation_error" });
+    }
 
     const telegramId = requireTelegramId(req, body.telegramId);
     if (!telegramId) return reply.code(401).send({ error: "unauthorized" });
@@ -171,48 +280,19 @@ export async function wishlistRoutes(app: FastifyInstance) {
       }
     }
 
-    // Автоподгрузка фото/названия по ссылке вместо ручной загрузки
-    // (решение 2026-10-02, без партнёрок - см. services/linkPreview.ts).
-    // Не у каждой ссылки получится - это ожидаемо, не блокируем сохранение.
-    let preview = await fetchLinkPreview(body.url);
-
-    // Wildberries блокирует свой og-парсинг антиботом даже через headless-
-    // браузер (см. беклог, "найти бесплатное решение") - пока не найдём
-    // бесплатный обход, добираем через платный актор на Apify.
-    if (!preview.title && !preview.imageUrl) {
-      try {
-        const parsed = new URL(body.url);
-        if (isWildberriesUrl(parsed)) {
-          preview = await fetchWildberriesViaApify(body.url);
-        }
-      } catch {
-        // невалидный URL уже отсеян схемой выше, но на всякий случай
-      }
-    }
-
-    // Ссылка может вести прямо на картинку (см. fetchLinkPreview) - тогда
-    // у самой картинки нет "названия", и разбирать путь CDN-ссылки ради
-    // имени бессмысленно (получится мусор вроде хэша файла).
-    const isDirectImage = preview.imageUrl === body.url;
-
-    const item = await db.item.create({
-      data: {
-        wishlistId: wishlist.id,
-        url: body.url,
-        price: body.price,
-        selfPurchased: body.selfPurchased ?? false,
-        // Пользователь просил не голые ссылки, а названия (2026-10-02) -
-        // title всегда непустой: свой ввод -> подтянутый по ссылке -> имя,
-        // придуманное из самой ссылки (см. deriveNameFromUrl).
-        title:
-          body.title ??
-          preview.title ??
-          (isDirectImage ? "Фото по ссылке" : deriveNameFromUrl(body.url)),
-        imageUrl: preview.imageUrl ?? undefined,
-      },
-    });
+    // Автоподгрузка фото/названия по ссылке (решение 2026-10-02) -
+    // services/itemCreate.ts, переиспользуется ботом (пересылка ссылки в
+    // чат, см. bot/bot.ts).
+    const item = await createItemFromUrl(
+      wishlist.id,
+      body.url,
+      body.title,
+      body.price,
+      body.selfPurchased,
+      body.maxContributors,
+    );
     // Новая позиция никогда не забронирована в момент создания.
-    return reply.code(201).send(serializeItem(item, sbpPhone ?? null, false));
+    return reply.code(201).send(serializeItemView({ ...item, reservedBy: null }, [], sbpPhone ?? null, null));
   });
 
   app.delete("/api/items/:itemId", async (req, reply) => {
