@@ -1,4 +1,5 @@
 import { createHmac } from "node:crypto";
+import { ZodError } from "zod";
 import { env } from "../env.js";
 
 // Раньше бэкенд слепо доверял telegramId, присланному в теле запроса -
@@ -20,7 +21,21 @@ export interface TelegramAuthUser {
 // Беклог В-9: BigInt("") === 0n в JS, не ошибка - пустой telegramId
 // схлопывал разных клиентов в одного пользователя с telegramId=0,
 // нечисловая строка валила необработанное исключение -> 500.
-export const telegramIdSchema = /^\d+$/;
+// QA блока 4, QB4-6: и длина ограничена - число больше int8 (BigInt в
+// Prisma) тоже валило 500. 18 цифр всегда влезают в int8, а настоящие
+// id Telegram сейчас не длиннее 16.
+export const telegramIdSchema = /^\d{1,18}$/;
+
+// Dev-путь (ALLOW_DEV_TELEGRAM_ID): присланный, но кривой telegramId -
+// ошибка запроса (400 validation_error, см. setErrorHandler в index.ts),
+// а не "не авторизован" и не 500.
+function devTelegramId(bodyTelegramId: string | undefined): string | null {
+  if (!env.ALLOW_DEV_TELEGRAM_ID || !bodyTelegramId) return null;
+  if (!telegramIdSchema.test(bodyTelegramId)) {
+    throw new ZodError([{ code: "custom", path: ["telegramId"], message: "invalid_telegram_id" }]);
+  }
+  return bodyTelegramId;
+}
 
 export function verifyInitData(initData: string): TelegramAuthUser | null {
   if (!initData) return null;
@@ -62,10 +77,7 @@ export function resolveTelegramId(
 ): string | null {
   const verified = initData ? verifyInitData(initData) : null;
   if (verified) return verified.id;
-  if (env.ALLOW_DEV_TELEGRAM_ID && bodyTelegramId && telegramIdSchema.test(bodyTelegramId)) {
-    return bodyTelegramId;
-  }
-  return null;
+  return devTelegramId(bodyTelegramId);
 }
 
 // "Дарить неанонимно" (CLAUDE.md, 2026-10-02) показывает получателю
@@ -81,8 +93,6 @@ export function resolveTelegramUser(
 ): TelegramAuthUser | null {
   const verified = initData ? verifyInitData(initData) : null;
   if (verified) return verified;
-  if (env.ALLOW_DEV_TELEGRAM_ID && bodyTelegramId && telegramIdSchema.test(bodyTelegramId)) {
-    return { id: bodyTelegramId, firstName: "" };
-  }
-  return null;
+  const devId = devTelegramId(bodyTelegramId);
+  return devId ? { id: devId, firstName: "" } : null;
 }
