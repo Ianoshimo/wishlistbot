@@ -1,3 +1,4 @@
+import { trackEvent } from "../api";
 // Спека итерации 1, п.6: первый запуск без своего вишлиста и без чужой
 // ссылки. Отдельный от MyWishlist компонент - в отличие от пустого
 // вишлиста (0 позиций, но вишлист уже создан), здесь ещё нет даже своего
@@ -38,7 +39,10 @@ export function Onboarding({ onStart }: { onStart: () => void }) {
       </div>
       <div style={{ padding: "12px 16px 20px" }}>
         <button
-          onClick={onStart}
+          onClick={() => {
+            trackEvent("onboarding_create_clicked");
+            onStart();
+          }}
           style={{ width: "100%", height: 50, borderRadius: 14, background: "var(--accent)", color: "#ffffff", fontSize: 15, fontWeight: 600, border: "none" }}
         >
           Создать свой вишлист

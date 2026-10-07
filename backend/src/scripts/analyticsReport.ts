@@ -143,6 +143,56 @@ async function main() {
     console.log("  частые названия поводов за период:");
     for (const t of topTitles) console.log(`    ${t.title} - ${n(t.c)}`);
   }
+
+  // ТЗ блок 4: активность, клиентские события, полноэкранный режим, ошибки.
+  section("Активные пользователи");
+  const active = await db.$queryRaw<{ users: bigint }[]>`
+    SELECT COUNT(DISTINCT "userId") AS users FROM "Event" WHERE "createdAt" >= ${since} AND "userId" IS NOT NULL`;
+  console.log(`  за период: ${n(active[0]?.users)}`);
+  const daily = await db.$queryRaw<{ d: string; users: bigint; events: bigint }[]>`
+    SELECT to_char(date_trunc('day', "createdAt"), 'YYYY-MM-DD') AS d,
+      COUNT(DISTINCT "userId") AS users, COUNT(*) AS events
+    FROM "Event" WHERE "createdAt" >= ${since} GROUP BY 1 ORDER BY 1 DESC LIMIT 14`;
+  for (const r of daily) console.log(`  ${r.d}   DAU: ${String(n(r.users)).padStart(4)}   событий: ${n(r.events)}`);
+
+  section("Интерфейс (клиентские события)");
+  const ui = await db.$queryRaw<{ type: string; c: bigint; users: bigint }[]>`
+    SELECT type, COUNT(*) AS c, COUNT(DISTINCT "userId") AS users FROM "Event"
+    WHERE type LIKE 'ui\_%' AND "createdAt" >= ${since} GROUP BY type ORDER BY c DESC`;
+  for (const r of ui) console.log(`  ${r.type.padEnd(30)} ${String(n(r.c)).padStart(6)}   польз.: ${n(r.users)}`);
+  if (ui.length === 0) console.log("  клиентских событий пока нет");
+
+  const screens = await db.$queryRaw<{ screen: string; c: bigint }[]>`
+    SELECT props->>'screen' AS screen, COUNT(*) AS c FROM "Event"
+    WHERE type = 'ui_screen_viewed' AND "createdAt" >= ${since} GROUP BY 1 ORDER BY c DESC LIMIT 10`;
+  if (screens.length > 0) {
+    console.log("  топ экранов:");
+    for (const s of screens) console.log(`    ${String(s.screen).padEnd(20)} ${n(s.c)}`);
+  }
+
+  const opens = await db.$queryRaw<{ platform: string | null; fullscreen: string | null; c: bigint }[]>`
+    SELECT props->>'platform' AS platform, props->>'fullscreen' AS fullscreen, COUNT(*) AS c FROM "Event"
+    WHERE type = 'ui_app_opened' AND "createdAt" >= ${since} GROUP BY 1, 2 ORDER BY c DESC`;
+  if (opens.length > 0) {
+    const total = opens.reduce((a, r) => a + n(r.c), 0);
+    const full = opens.filter((r) => r.fullscreen === "true").reduce((a, r) => a + n(r.c), 0);
+    console.log(`  открытий приложения: ${total}, в полноэкранном режиме: ${pct(full, total)}`);
+    for (const r of opens) console.log(`    ${String(r.platform ?? "?").padEnd(12)} fullscreen=${r.fullscreen ?? "?"}   ${n(r.c)}`);
+  }
+
+  section("Складчина и сборы");
+  const splits = await db.$queryRaw<{ fundraiser: string | null; c: bigint }[]>`
+    SELECT props->>'fundraiser' AS fundraiser, COUNT(*) AS c FROM "Event"
+    WHERE type = 'item_added' AND (props->>'maxContributors')::int > 1 AND "createdAt" >= ${since} GROUP BY 1`;
+  for (const r of splits) console.log(`  ${r.fundraiser === "true" ? "сбор по ссылке банка" : "перевод по СБП"}   позиций: ${n(r.c)}`);
+  if (splits.length === 0) console.log("  складчин за период нет");
+
+  section("Ошибки API (5xx)");
+  const errors = await db.$queryRaw<{ route: string; c: bigint }[]>`
+    SELECT (props->>'method') || ' ' || (props->>'route') AS route, COUNT(*) AS c FROM "Event"
+    WHERE type = 'api_error' AND "createdAt" >= ${since} GROUP BY 1 ORDER BY c DESC LIMIT 10`;
+  for (const r of errors) console.log(`  ${r.route.padEnd(40)} ${n(r.c)}`);
+  if (errors.length === 0) console.log("  ошибок нет");
 }
 
 main()

@@ -16,7 +16,7 @@ export async function createItemFromUrl(
   maxContributors?: number,
   // Аналитика (2026-10-07): откуда добавлена позиция и кто владелец -
   // событие item_added пишется здесь, в одном месте для мини-аппа и бота.
-  meta?: { source: ItemSource; ownerUserId: string },
+  meta?: { source: ItemSource; ownerUserId: string; fundraiserUrl?: string },
 ) {
   let preview = await fetchLinkPreview(url);
 
@@ -40,6 +40,7 @@ export async function createItemFromUrl(
       price,
       selfPurchased: selfPurchased ?? false,
       maxContributors: maxContributors ?? 1,
+      fundraiserUrl: meta?.fundraiserUrl,
       title:
         titleOverride ??
         preview.title ??
@@ -58,6 +59,7 @@ export async function createItemFromUrl(
       price: item.price ?? null,
       selfPurchased: item.selfPurchased,
       maxContributors: item.maxContributors,
+      fundraiser: Boolean(item.fundraiserUrl),
     },
   });
 

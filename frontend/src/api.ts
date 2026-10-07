@@ -32,6 +32,9 @@ const ERROR_MESSAGES: Record<string, string> = {
   unauthorized: "Не удалось подтвердить вход через Telegram - перезапустите бота",
   sbp_phone_required: "Укажите номер телефона для перевода по СБП",
   wishlist_limit_reached: "Можно завести не больше 3 вишлистов",
+  contributors_below_joined: "Уже присоединилось больше участников - меньше мест поставить нельзя",
+  split_needs_payment_target: "Чтобы скинуться, нужен номер для перевода по СБП или ссылка на сбор в банке",
+  split_item_already_reserved: "Подарок уже забронирован одним человеком - складчину включить нельзя",
 };
 
 // Повод хранится как UTC-полночь календарного дня (QA-14) - показываем его
@@ -115,6 +118,10 @@ export interface Item {
   giverNames: string[];
   // QA-10: зритель - владелец вишлиста (бронировать своё нельзя).
   viewerIsOwner: boolean;
+  // Сбор по ссылке банка (ТЗ блок 4): сам факт виден всем, ссылка -
+  // только участникам складчины и владельцу.
+  hasFundraiser: boolean;
+  fundraiserUrl: string | null;
 }
 
 export interface WishlistResponse {
@@ -200,6 +207,7 @@ export const api = {
       selfPurchased?: boolean;
       sbpPhone?: string;
       maxContributors?: number;
+      fundraiserUrl?: string;
     },
   ) =>
     request<Item>(`/api/wishlists/${slug}/items`, {
@@ -252,7 +260,10 @@ export const api = {
       body: JSON.stringify({ telegramId: getTelegramId() }),
     }),
 
-  updateItem: (itemId: string, data: { title?: string; price?: number | null; url?: string }) =>
+  updateItem: (
+    itemId: string,
+    data: { title?: string; price?: number | null; url?: string; maxContributors?: number; fundraiserUrl?: string | null },
+  ) =>
     request<Item>(`/api/items/${itemId}`, {
       method: "PATCH",
       body: JSON.stringify({ ...data, telegramId: getTelegramId() }),
@@ -287,3 +298,39 @@ export const api = {
       body: JSON.stringify({ telegramId: getTelegramId(), amount }),
     }),
 };
+
+// ТЗ блок 4 (логи): клиентские события копятся в очередь и уходят пачкой
+// раз в 3 секунды или при сворачивании мини-аппа. Ошибки отправки молча
+// игнорируются - аналитика не должна мешать интерфейсу.
+type ClientProps = Record<string, string | number | boolean>;
+const eventQueue: { name: string; props?: ClientProps }[] = [];
+let flushTimer: number | undefined;
+
+function flushEvents() {
+  flushTimer = undefined;
+  if (eventQueue.length === 0) return;
+  const events = eventQueue.splice(0, 20);
+  try {
+    void fetch(`${API_BASE}/api/events`, {
+      method: "POST",
+      keepalive: true,
+      headers: { "Content-Type": "application/json", "X-Telegram-Init-Data": getInitData() },
+      body: JSON.stringify({ telegramId: getTelegramId(), events }),
+    }).catch(() => {});
+  } catch {
+    // ignore
+  }
+  if (eventQueue.length > 0) flushTimer = window.setTimeout(flushEvents, 3000);
+}
+
+export function trackEvent(name: string, props?: ClientProps) {
+  if (eventQueue.length >= 200) return;
+  eventQueue.push({ name, props });
+  if (flushTimer === undefined) flushTimer = window.setTimeout(flushEvents, 3000);
+}
+
+if (typeof document !== "undefined") {
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") flushEvents();
+  });
+}

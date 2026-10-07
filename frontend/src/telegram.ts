@@ -14,6 +14,15 @@ interface TelegramWebApp {
   ready: () => void;
   expand: () => void;
   openLink?: (url: string) => void;
+  platform?: string;
+  version?: string;
+  isFullscreen?: boolean;
+  BackButton?: {
+    show: () => void;
+    hide: () => void;
+    onClick: (cb: () => void) => void;
+    offClick: (cb: () => void) => void;
+  };
   MainButton: {
     setText: (text: string) => void;
     show: () => void;
@@ -112,4 +121,36 @@ export function openExternalLink(url: string, httpFallback?: string) {
     }
   }
   window.location.href = url;
+}
+
+export function isInsideTelegram(): boolean {
+  return isRealTelegram;
+}
+
+// ТЗ блок 4, п.5.3: в полноэкранном режиме левый верхний угол занимает
+// "Закрыть" Telegram - "Назад" внутри Telegram показываем нативной кнопкой
+// клиента, а не стрелкой в шапке. Возвращает функцию снятия обработчика.
+export function showTelegramBackButton(onBack: () => void): () => void {
+  const bb = isRealTelegram ? webApp?.BackButton : undefined;
+  if (!bb) return () => {};
+  bb.onClick(onBack);
+  bb.show();
+  return () => {
+    bb.offClick(onBack);
+    bb.hide();
+  };
+}
+
+// Свойства события "приложение открыто" (ТЗ блок 4, логи) - без
+// идентичности пользователя, только окружение.
+export function appOpenedProps(): Record<string, string | number | boolean> {
+  const start = getStartParam();
+  return {
+    insideTelegram: isRealTelegram,
+    platform: webApp?.platform ?? "web",
+    tgVersion: webApp?.version ?? "",
+    startKind: start?.startsWith("w_") ? "wishlist" : start?.startsWith("p_") ? "pool" : start ? "other" : "none",
+    colorScheme: webApp?.colorScheme ?? "",
+    fullscreen: Boolean(webApp?.isFullscreen),
+  };
 }

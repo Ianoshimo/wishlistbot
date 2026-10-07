@@ -82,3 +82,13 @@ button {
     opacity: 1;
   }
 }
+
+/* ТЗ блок 4, п.5: безопасные отступы. В полноэкранном режиме Telegram
+   (Bot API 8.0) рисует поверх мини-аппа "Закрыть" и "⌄ •••" - сверху
+   отступаем на системный край (--tg-safe-area-inset-*) плюс зону этих
+   кнопок (--tg-content-safe-area-inset-*). Вне полноэкранного режима обе
+   переменные 0, остаётся env() для обычного браузера на телефоне. */
+:root {
+  --safe-top: max(env(safe-area-inset-top, 0px), calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px)));
+  --safe-bottom: max(env(safe-area-inset-bottom, 0px), calc(var(--tg-safe-area-inset-bottom, 0px) + var(--tg-content-safe-area-inset-bottom, 0px)));
+}

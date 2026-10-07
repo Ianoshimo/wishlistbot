@@ -9,6 +9,8 @@ import { wishlistRoutes } from "./routes/wishlists.js";
 import { itemRoutes } from "./routes/items.js";
 import { poolRoutes } from "./routes/pools.js";
 import { calendarRoutes } from "./routes/calendar.js";
+import { eventRoutes } from "./routes/events.js";
+import { track } from "./services/analytics.js";
 
 const app = Fastify({ logger: true });
 
@@ -26,6 +28,16 @@ app.setErrorHandler((error, req, reply) => {
   return reply.code(500).send({ error: "internal_error" });
 });
 
+// ТЗ блок 4 (логи): каждая 5xx - событие api_error с шаблоном маршрута
+// (не конкретным URL с id), чтобы ошибки считались в статистике.
+app.addHook("onResponse", async (req, reply) => {
+  if (reply.statusCode >= 500) {
+    track("api_error", {
+      props: { method: req.method, route: req.routeOptions?.url ?? "unknown", status: reply.statusCode },
+    });
+  }
+});
+
 // Беклог Б-14 (Продукт/беклог-баги-итерация-1.md): origin: true отражал
 // любой Origin - сторонний сайт мог дёргать API из браузера жертвы. Сужаем
 // до реального домена мини-аппа (прод - MINI_APP_URL, разработка -
@@ -35,6 +47,7 @@ await app.register(wishlistRoutes);
 await app.register(itemRoutes);
 await app.register(poolRoutes);
 await app.register(calendarRoutes);
+await app.register(eventRoutes);
 
 app.get("/health", async () => ({ ok: true }));
 

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, describeError, formatOccasionDate, formatRub, type Item, type MyWishlistSummary, type WishlistResponse } from "../api";
+import { api, describeError, formatOccasionDate, formatRub, trackEvent, type Item, type MyWishlistSummary, type WishlistResponse } from "../api";
 import {
   BottomSheet,
   ErrorBanner,
@@ -51,6 +51,10 @@ export function MyWishlist() {
   const [nameSheet, setNameSheet] = useState<"create" | "rename" | null>(null);
 
   useEffect(() => {
+    trackEvent("screen_viewed", { screen: "my_wishlist" });
+  }, []);
+
+  useEffect(() => {
     void (async () => {
       try {
         // Беклог Н-2 переехал сюда (раньше решался на бэкенде, одним
@@ -86,6 +90,7 @@ export function MyWishlist() {
   }, []);
 
   const switchTo = async (slug: string) => {
+    trackEvent("wishlist_switched");
     localStorage.setItem(MY_SLUG_KEY, slug);
     try {
       const data = await api.getWishlist(slug);
@@ -152,58 +157,7 @@ export function MyWishlist() {
 
   return (
     <Screen>
-      <Header
-        title={wishlist.title}
-        action={
-          <div style={{ display: "flex", gap: 8 }}>
-            <button
-              onClick={() => setCalendarOpen(true)}
-              aria-label="Календарь"
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 10,
-                background: "var(--surface)",
-                border: "1px solid var(--border)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "var(--accent)",
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                <rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="2" />
-                <path d="M3 9h18M8 3v4M16 3v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-              </svg>
-            </button>
-            <Link
-              to={`/w/${wishlist.slug}/share`}
-              aria-label="Поделиться"
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 10,
-                background: "var(--surface)",
-                border: "1px solid var(--border)",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                color: "var(--accent)",
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                <path
-                  d="M12 16V4M12 4l-4 4M12 4l4 4M5 14v4a2 2 0 002 2h10a2 2 0 002-2v-4"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </Link>
-          </div>
-        }
-      />
+      <Header title={wishlist.title} />
 
       {/* Переключатель вишлистов (CLAUDE.md, 2026-10-02, "сделай 3 и
           названия для них") - тап по уже активной вкладке открывает
@@ -280,6 +234,11 @@ export function MyWishlist() {
         </div>
       )}
 
+      {wishlist.items.length === 0 && <ActionRow slug={wishlist.slug} onCalendar={() => {
+            trackEvent("form_opened", { form: "calendar" });
+            setCalendarOpen(true);
+          }} />}
+
       {wishlist.items.length === 0 ? (
         <div
           style={{
@@ -317,6 +276,10 @@ export function MyWishlist() {
       ) : (
         <>
           <ProgressCard total={wishlist.items.length} done={boughtCount} />
+          <ActionRow slug={wishlist.slug} onCalendar={() => {
+            trackEvent("form_opened", { form: "calendar" });
+            setCalendarOpen(true);
+          }} />
           <div
             style={{
               flexGrow: 1,
@@ -358,9 +321,9 @@ export function MyWishlist() {
                       <StoreBadge store={item.store} />
                       <StatusBadge status={item.status} />
                     </div>
-                    {item.selfPurchased && (
+                    {(item.selfPurchased || item.hasFundraiser) && (
                       <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                        Уже куплено · перевод по СБП
+                        {item.selfPurchased ? "Уже куплено · перевод по СБП" : "Сбор по ссылке банка"}
                         {item.maxContributors > 1 && ` · участвуют ${item.contributorsCount} из ${item.maxContributors}`}
                       </div>
                     )}
@@ -373,7 +336,10 @@ export function MyWishlist() {
                   </div>
                   <PriorityStar active={item.priority} editable onClick={() => togglePriority(item.id)} />
                   <button
-                    onClick={() => setEditingItem(item)}
+                    onClick={() => {
+                      trackEvent("form_opened", { form: "edit_item" });
+                      setEditingItem(item);
+                    }}
                     aria-label="Редактировать позицию"
                     style={{
                       width: 28,
@@ -405,7 +371,13 @@ export function MyWishlist() {
         </>
       )}
 
-      <Fab label="Добавить позицию" onClick={() => setAddOpen(true)} />
+      <Fab
+        label="Добавить позицию"
+        onClick={() => {
+          trackEvent("form_opened", { form: "add_item" });
+          setAddOpen(true);
+        }}
+      />
 
       <BottomSheet open={addOpen} onClose={() => setAddOpen(false)} title="Новая позиция">
         <AddItemForm
@@ -475,5 +447,42 @@ export function MyWishlist() {
           Продукт/роадмап-5-итераций.md). Роут /p/new и весь бэкенд под
           сбор в коде остались нетронутыми. */}
     </Screen>
+  );
+}
+
+// ТЗ блок 4, п.5.2: "Поделиться" и "Повод" - крупными кнопками в зоне
+// большого пальца, а не иконками в правом верхнем углу (там в полноэкранном
+// режиме Telegram рисует свои "⌄ •••").
+function ActionRow({ slug, onCalendar }: { slug: string; onCalendar: () => void }) {
+  const base = {
+    flex: 1,
+    height: 46,
+    borderRadius: 14,
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    fontSize: 14,
+    fontWeight: 600,
+  } as const;
+  return (
+    <div style={{ display: "flex", gap: 10, padding: "0 16px 12px" }}>
+      <Link to={`/w/${slug}/share`} style={{ ...base, background: "var(--accent)", color: "#ffffff" }}>
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
+          <path d="M12 16V4M12 4l-4 4M12 4l4 4M5 14v4a2 2 0 002 2h10a2 2 0 002-2v-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        Поделиться
+      </Link>
+      <button
+        onClick={onCalendar}
+        style={{ ...base, background: "var(--surface)", border: "1px solid var(--border)", color: "var(--accent)" }}
+      >
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
+          <rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="2" />
+          <path d="M3 9h18M8 3v4M16 3v4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        </svg>
+        Повод и календарь
+      </button>
+    </div>
   );
 }

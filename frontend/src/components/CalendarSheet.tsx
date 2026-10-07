@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { absoluteApiUrl, api, describeError, formatOccasionDate } from "../api";
+import { absoluteApiUrl, api, describeError, formatOccasionDate, trackEvent } from "../api";
 import { CopyRow, ErrorBanner, Field, PrimaryButton } from "./UI";
 import { openExternalLink } from "../telegram";
 
@@ -159,6 +159,7 @@ export function CalendarSheet({
                 e.preventDefault();
                 // webcal:// Telegram открыть не умеет - внутри него уходим на
                 // https-версию фида, календарь телефона предложит подписку.
+                trackEvent("calendar_subscribe_clicked");
                 openExternalLink(webcalUrl, httpsUrl);
               }}
               style={{

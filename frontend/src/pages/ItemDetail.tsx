@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import { api, describeError, formatRub, type Item } from "../api";
+import { api, describeError, formatRub, trackEvent, type Item } from "../api";
+import { openExternalLink } from "../telegram";
 import { BottomSheet, CopyRow, ErrorBanner, Header, PrimaryButton, Screen, StoreBadge } from "../components/UI";
 
 // Спека итерации 1, п.2-3: полный жизненный цикл брони в одном экране,
@@ -28,6 +29,7 @@ export function ItemDetail() {
       .catch((err) => setLoadError(describeError(err)));
   useEffect(() => {
     void reload();
+    trackEvent("screen_viewed", { screen: "item" });
   }, [itemId]);
 
   if (loadError && !item) {
@@ -47,6 +49,14 @@ export function ItemDetail() {
   // пара ручек (reserve/markBought), бэкенд сам различает режим по
   // item.maxContributors - см. backend/src/routes/items.ts.
   const isSplit = item.maxContributors > 1;
+  // ТЗ блок 4: сбор по ссылке банка - скидываются на ещё не купленный
+  // подарок, деньги идут в сбор получателя, а не на его номер.
+  const isFundraiser = isSplit && item.hasFundraiser && !item.selfPurchased;
+  const openFundraiser = (url: string | null) => {
+    if (!url) return;
+    trackEvent("fundraiser_link_clicked");
+    openExternalLink(url);
+  };
   const full = item.contributorsCount >= item.maxContributors;
   // QA-10: владелец на экране своей позиции (прямая ссылка) не видит
   // "Забронировать" - бронировать своё всё равно нельзя.
@@ -58,6 +68,14 @@ export function ItemDetail() {
     setError(null);
     try {
       await api.reserveItem(itemId, revealIdentity);
+      if (isFundraiser) {
+        // Ссылку на сбор бэкенд отдаёт только участнику - берём её из
+        // свежего ответа после присоединения.
+        const fresh = await api.getItem(itemId);
+        setItem(fresh);
+        openFundraiser(fresh.fundraiserUrl);
+        return;
+      }
       await reload();
       if (item.selfPurchased) setSbpSheetOpen(true);
     } catch (err) {
@@ -105,7 +123,12 @@ export function ItemDetail() {
         </div>
 
         {isSplit ? (
-          <SplitStatus item={item} full={full} onShowSbp={() => setSbpSheetOpen(true)} />
+          <SplitStatus
+            item={item}
+            full={full}
+            fundraiser={isFundraiser}
+            onShowSbp={() => (isFundraiser ? openFundraiser(item.fundraiserUrl) : setSbpSheetOpen(true))}
+          />
         ) : (
           <>
             {item.status === "available" && (
@@ -163,6 +186,7 @@ export function ItemDetail() {
                   ) : (
                     <a
                       href={item.url}
+                      onClick={() => trackEvent("store_link_clicked", { store: item.store ?? "other" })}
                       target="_blank"
                       rel="noreferrer"
                       style={{
@@ -214,12 +238,12 @@ export function ItemDetail() {
           <>
             {canReserve && (
               <PrimaryButton onClick={reserve} style={{ width: "100%" }}>
-                Перевести свою часть
+                {isFundraiser ? "Скинуться через сбор" : "Перевести свою часть"}
               </PrimaryButton>
             )}
             {item.reservedByMe && !item.paidByMe && item.status !== "bought" && (
               <PrimaryButton onClick={markBought} style={{ width: "100%" }}>
-                Деньги отправлены
+                {isFundraiser ? "Я скинулся" : "Деньги отправлены"}
               </PrimaryButton>
             )}
           </>
@@ -253,7 +277,18 @@ export function ItemDetail() {
 // "Скинуться на подарок" (CLAUDE.md, 2026-10-02) - статус позиции для
 // режима с несколькими дарителями: прогресс "X из Y" + состояние именно
 // текущего зрителя (присоединился/оплатил/нет мест).
-function SplitStatus({ item, full, onShowSbp }: { item: Item; full: boolean; onShowSbp: () => void }) {
+function SplitStatus({
+  item,
+  full,
+  fundraiser,
+  onShowSbp,
+}: {
+  item: Item;
+  full: boolean;
+  fundraiser: boolean;
+  onShowSbp: () => void;
+}) {
+  const share = item.price ? formatRub(Math.round(item.price / item.maxContributors)) : null;
   // QA-13: присоединившиеся ещё не обязательно перевели - "участвуют", а
   // не "скинулись".
   const progress = `участвуют ${item.contributorsCount} из ${item.maxContributors}`;
@@ -275,7 +310,7 @@ function SplitStatus({ item, full, onShowSbp }: { item: Item; full: boolean; onS
         <div style={{ padding: 14, borderRadius: 14, background: "var(--warning-soft)", color: "var(--warning)", fontSize: 13 }}>
           {item.paidByMe
             ? `Вы перевели свою часть - ждём остальных (${progress})`
-            : `Вы присоединились (${progress}) - переведите свою часть. Место снимется ${expiresIn(item.reservationExpiresAt)}, если не отметить перевод`}
+            : `Вы присоединились (${progress}) - переведите свою часть${share ? `, примерно ${share}` : ""}. Место снимется ${expiresIn(item.reservationExpiresAt)}, если не отметить ${fundraiser ? "участие" : "перевод"}`}
         </div>
         <button
           onClick={onShowSbp}
@@ -291,7 +326,7 @@ function SplitStatus({ item, full, onShowSbp }: { item: Item; full: boolean; onS
             fontWeight: 600,
           }}
         >
-          Показать реквизиты для перевода
+          {fundraiser ? "Открыть сбор в банке" : "Показать реквизиты для перевода"}
         </button>
       </>
     );
@@ -307,7 +342,9 @@ function SplitStatus({ item, full, onShowSbp }: { item: Item; full: boolean; onS
 
   return (
     <div style={{ padding: 14, borderRadius: 14, background: "var(--surface)", border: "1px solid var(--border)", fontSize: 14, color: "var(--text-secondary)" }}>
-      Получатель уже купил(а) этот подарок сам(а) и разрешил(а) скинуться - {progress}. Присоединяйтесь и переведите свою часть по номеру телефона.
+      {fundraiser
+        ? `Получатель открыл сбор на этот подарок - ${progress}. Присоединяйтесь и скиньтесь через банк${share ? `, на каждого примерно ${share}` : ""}.`
+        : `Получатель уже купил(а) этот подарок сам(а) и разрешил(а) скинуться - ${progress}. Присоединяйтесь и переведите свою часть по номеру телефона.`}
     </div>
   );
 }
@@ -335,14 +372,15 @@ function SbpPaymentCard({ item }: { item: Item }) {
         border: "1px solid var(--border)",
       }}
     >
-      {item.sbpPhone ? <CopyRow label="Номер телефона для перевода по СБП" value={item.sbpPhone} /> : null}
+      {item.sbpPhone ? <CopyRow label="Номер телефона для перевода по СБП" value={item.sbpPhone} onCopied={() => trackEvent("sbp_details_copied", { field: "phone" })} /> : null}
       {amount && (
         <CopyRow
           label={isSplit ? `Сумма (ваша часть из ${item.maxContributors})` : "Сумма"}
+          onCopied={() => trackEvent("sbp_details_copied", { field: "amount" })}
           value={`${(amount / 100).toFixed(0)} ₽`}
         />
       )}
-      <CopyRow label="Комментарий к переводу" value={item.title ?? "Подарок"} />
+      <CopyRow label="Комментарий к переводу" value={item.title ?? "Подарок"} onCopied={() => trackEvent("sbp_details_copied", { field: "comment" })} />
 
       <ol style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: "var(--text-secondary)", display: "flex", flexDirection: "column", gap: 6 }}>
         <li>Откройте приложение банка</li>

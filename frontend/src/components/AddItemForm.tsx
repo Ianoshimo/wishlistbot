@@ -7,7 +7,10 @@ import { ErrorBanner, Field, PrimaryButton } from "./UI";
 // "Bottom sheet для 'Добавить позицию' ... вместо перехода на отдельную
 // страницу - быстрее ощущается"). Логика валидации не изменилась.
 
-const MAX_CONTRIBUTORS_CAP = 10;
+// ТЗ блок 4: складчина до 100 участников.
+export const MAX_CONTRIBUTORS_CAP = 100;
+// Подсказка про сбор появляется для подарков от этой цены (в рублях).
+const FUNDRAISER_HINT_RUB = 5000;
 
 function validationError(
   url: string,
@@ -16,6 +19,7 @@ function validationError(
   sbpPhone: string,
   split: boolean,
   maxContributors: string,
+  fundraiserUrl: string,
 ): string | null {
   if (!/^https?:\/\/.+/i.test(url)) return "Ссылка должна начинаться с http:// или https://";
   if (price && Number(price) <= 0) return "Цена должна быть больше нуля";
@@ -24,6 +28,9 @@ function validationError(
     const n = Number(maxContributors);
     if (!Number.isInteger(n) || n < 2 || n > MAX_CONTRIBUTORS_CAP) {
       return `Сколько человек может скинуться - от 2 до ${MAX_CONTRIBUTORS_CAP}`;
+    }
+    if (!selfPurchased && !/^https?:\/\/.+/i.test(fundraiserUrl)) {
+      return "Вставьте ссылку на сбор из приложения банка - по ней друзья будут скидываться";
     }
   }
   return null;
@@ -39,6 +46,8 @@ export function AddItemForm({ slug, onAdded }: { slug: string; onAdded: (item: I
   // вместе с selfPurchased, см. backend/src/routes/wishlists.ts.
   const [split, setSplit] = useState(false);
   const [maxContributors, setMaxContributors] = useState("2");
+  // Сбор по ссылке банка (ТЗ блок 4) - для ещё не купленного подарка.
+  const [fundraiserUrl, setFundraiserUrl] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -57,7 +66,7 @@ export function AddItemForm({ slug, onAdded }: { slug: string; onAdded: (item: I
   }, []);
 
   const submit = async () => {
-    const invalid = validationError(url, price, selfPurchased, sbpPhone, split, maxContributors);
+    const invalid = validationError(url, price, selfPurchased, sbpPhone, split, maxContributors, fundraiserUrl);
     if (invalid) {
       setError(invalid);
       return;
@@ -71,7 +80,8 @@ export function AddItemForm({ slug, onAdded }: { slug: string; onAdded: (item: I
         price: price ? Math.round(Number(price) * 100) : undefined,
         selfPurchased: selfPurchased || undefined,
         sbpPhone: selfPurchased ? sbpPhone.trim() : undefined,
-        maxContributors: selfPurchased && split ? Number(maxContributors) : undefined,
+        maxContributors: split ? Number(maxContributors) : undefined,
+        fundraiserUrl: split && !selfPurchased ? fundraiserUrl.trim() : undefined,
       });
       onAdded(item);
     } catch (err) {
@@ -127,7 +137,13 @@ export function AddItemForm({ slug, onAdded }: { slug: string; onAdded: (item: I
           />
         )}
 
-        {selfPurchased && (
+        {!selfPurchased && !split && Number(price) >= FUNDRAISER_HINT_RUB && (
+          <div style={{ fontSize: 13, color: "var(--text-secondary)", padding: "10px 12px", borderRadius: 12, background: "var(--accent-soft)" }}>
+            Дорогой подарок? Создайте сбор в приложении банка и включите «Можно скинуться нескольким» - друзья скинутся вместе.
+          </div>
+        )}
+
+        {(
           <label
             style={{
               display: "flex",
@@ -151,13 +167,30 @@ export function AddItemForm({ slug, onAdded }: { slug: string; onAdded: (item: I
                 Можно скинуться нескольким
               </span>
               <span style={{ display: "block", fontSize: 13, color: "var(--text-secondary)", marginTop: 2 }}>
-                Каждый переведёт свою часть по тому же номеру и отметит перевод отдельно
+                {selfPurchased
+                  ? "Каждый переведёт свою часть по тому же номеру и отметит перевод отдельно"
+                  : "Друзья скинутся через сбор в вашем банке, каждый отметит своё участие"}
               </span>
             </span>
           </label>
         )}
 
-        {selfPurchased && split && (
+        {split && !selfPurchased && (
+          <>
+            <Field
+              label="Ссылка на сбор в банке"
+              value={fundraiserUrl}
+              onChange={setFundraiserUrl}
+              placeholder="https://..."
+              type="url"
+            />
+            <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: -10 }}>
+              Создайте сбор в приложении своего банка (обычно раздел «Платежи» или «Накопления» → «Сбор денег»), скопируйте ссылку на него и вставьте сюда. Ссылку увидят только те, кто присоединится.
+            </div>
+          </>
+        )}
+
+        {split && (
           <Field
             label={`Сколько человек может скинуться (2-${MAX_CONTRIBUTORS_CAP})`}
             value={maxContributors}

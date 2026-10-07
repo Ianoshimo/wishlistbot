@@ -103,6 +103,10 @@ export function serializeItemView(
     viewerIsOwner: isOwnerViewer,
     selfPurchased: item.selfPurchased,
     sbpPhone: item.selfPurchased && reservedByMe ? ownerSbpPhone : null,
+    // Сбор по ссылке банка (ТЗ блок 4): что сбор есть, видят все; саму
+    // ссылку - только участники и владелец, по той же логике, что номер СБП.
+    hasFundraiser: Boolean(item.fundraiserUrl),
+    fundraiserUrl: item.fundraiserUrl && (reservedByMe || isOwnerViewer) ? item.fundraiserUrl : null,
     reservedByMe,
     priority: item.priority,
     store: detectStore(item.url),

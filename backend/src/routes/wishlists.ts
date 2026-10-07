@@ -23,7 +23,8 @@ function requireTelegramId(req: FastifyRequest, bodyTelegramId: string | undefin
 // нигде в ответах (см. services/itemView.ts serializeItemView).
 
 const PHONE_RE = /^[\d\s()+-]{10,20}$/;
-const MAX_CONTRIBUTORS_CAP = 10;
+// ТЗ блок 4: складчина до 100 участников (раньше 10).
+export const MAX_CONTRIBUTORS_CAP = 100;
 // "Сделай 3 и названия для них" (CLAUDE.md, 2026-10-02) - продуктовый
 // лимит, не структурное ограничение БД (специально не уникальный
 // индекс/constraint - проще поднять позже, если понадобится). Раньше
@@ -230,6 +231,10 @@ export async function wishlistRoutes(app: FastifyInstance) {
       },
     });
 
+    if (body.title !== undefined && body.title !== wishlist.title) {
+      track("wishlist_renamed", { userId: wishlist.ownerId, wishlistId: wishlist.id, props: {} });
+    }
+
     // Аналитика: повод - ключевые данные о событии (что и когда дарят).
     if (body.occasionTitle !== undefined) {
       if (updated.occasionTitle && updated.occasionDate) {
@@ -300,10 +305,15 @@ export async function wishlistRoutes(app: FastifyInstance) {
         // задаёт, сколько дарителей могут разделить этот перевод. Имеет
         // смысл только вместе с selfPurchased - проверяется ниже.
         maxContributors: z.number().int().min(1).max(MAX_CONTRIBUTORS_CAP).optional(),
+        // Сбор по ссылке банка (ТЗ блок 4) - для ещё не купленного
+        // дорогого подарка. Та же защита схемы, что и у ссылки на товар (Б-8).
+        fundraiserUrl: z.string().url().regex(/^https?:\/\//i, "invalid_url_scheme").optional(),
       })
       .parse(req.body);
 
-    if (body.maxContributors && body.maxContributors > 1 && !body.selfPurchased) {
+    // Складчина - только если есть куда переводить: номер СБП ("уже купил
+    // сам") или ссылка на сбор в банке.
+    if (body.maxContributors && body.maxContributors > 1 && !body.selfPurchased && !body.fundraiserUrl) {
       return reply.code(400).send({ error: "validation_error" });
     }
 
@@ -345,7 +355,7 @@ export async function wishlistRoutes(app: FastifyInstance) {
       body.price,
       body.selfPurchased,
       body.maxContributors,
-      { source: "app", ownerUserId: wishlist.ownerId },
+      { source: "app", ownerUserId: wishlist.ownerId, fundraiserUrl: body.fundraiserUrl },
     );
     // Новая позиция никогда не забронирована в момент создания.
     return reply.code(201).send(serializeItemView({ ...item, reservedBy: null }, [], sbpPhone ?? null, null, true));
@@ -368,7 +378,14 @@ export async function wishlistRoutes(app: FastifyInstance) {
       return reply.code(403).send({ error: "not_your_wishlist" });
     }
 
+    const contributors = await db.giftShare.count({ where: { itemId } });
     await db.item.delete({ where: { id: itemId } });
+    track("item_deleted", {
+      userId: item.wishlist.ownerId,
+      wishlistId: item.wishlistId,
+      itemId,
+      props: { status: item.status, mode: item.maxContributors > 1 ? "split" : "classic", contributors },
+    });
     return reply.code(204).send();
   });
 }

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { absoluteApiUrl, api, describeError, formatOccasionDate, formatRub, type WishlistResponse } from "../api";
+import { absoluteApiUrl, api, describeError, formatOccasionDate, formatRub, trackEvent, type WishlistResponse } from "../api";
 import { openExternalLink } from "../telegram";
 import { ErrorBanner, Header, PriorityStar, Screen, StatusBadge, StoreBadge, Thumbnail } from "../components/UI";
 
@@ -21,6 +21,7 @@ export function SharedWishlist() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    trackEvent("screen_viewed", { screen: "shared_wishlist" });
     setShowInvite(!localStorage.getItem(seenKey(slug)));
     api
       .getWishlist(slug)
@@ -129,6 +130,7 @@ export function SharedWishlist() {
             href={absoluteApiUrl(`/api/wishlists/${slug}/occasion.ics`)}
             onClick={(e) => {
               e.preventDefault();
+              trackEvent("calendar_add_clicked");
               openExternalLink(absoluteApiUrl(`/api/wishlists/${slug}/occasion.ics`));
             }}
             style={{
@@ -178,9 +180,9 @@ export function SharedWishlist() {
                 <StoreBadge store={item.store} />
                 <StatusBadge status={item.status} />
               </div>
-              {item.selfPurchased && (
+              {(item.selfPurchased || item.hasFundraiser) && (
                 <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                  Уже куплено · перевод по СБП
+                  {item.selfPurchased ? "Уже куплено · перевод по СБП" : "Сбор по ссылке банка"}
                   {item.maxContributors > 1 && ` · участвуют ${item.contributorsCount} из ${item.maxContributors}`}
                 </div>
               )}

@@ -26,6 +26,7 @@ export interface EventProps {
     price: number | null; // копейки
     selfPurchased: boolean;
     maxContributors: number;
+    fundraiser: boolean;
   };
   // Бронь позиции (classic) или присоединение к доле ("скинуться").
   item_reserved: { mode: ReserveMode; revealIdentity: boolean; selfPurchased: boolean; store: string | null };
@@ -55,6 +56,16 @@ export interface EventProps {
   calendar_feed_fetched: { occasionCount: number };
   // Получатель отправил благодарность (фото/видео) дарителю(ям) через бота.
   thanks_sent: { mediaType: "photo" | "video" | "video_note"; recipients: number; delivered: number };
+  // ТЗ блок 4 (2026-10-07): логи "всего и вся".
+  // Владелец отредактировал позицию - только имена изменённых полей.
+  item_edited: { fields: string[] };
+  item_deleted: { status: string; mode: ReserveMode; contributors: number };
+  item_priority_toggled: { priority: boolean };
+  wishlist_renamed: Record<string, never>;
+  // Изменено число участников складчины / ссылка на сбор.
+  split_settings_changed: { from: number; to: number; fundraiser: boolean };
+  // Ошибка API 5xx - маршрут-шаблон, не конкретный URL с id.
+  api_error: { method: string; route: string; status: number };
 }
 
 export type EventType = keyof EventProps;
@@ -71,7 +82,77 @@ export const EVENT_TYPES = [
   "occasion_ics_downloaded",
   "calendar_feed_fetched",
   "thanks_sent",
+  "item_edited",
+  "item_deleted",
+  "item_priority_toggled",
+  "wishlist_renamed",
+  "split_settings_changed",
+  "api_error",
 ] as const satisfies readonly EventType[];
+
+// Клиентские события (POST /api/events) - строгий белый список: имя
+// события -> разрешённые поля props. В БД пишутся с префиксом "ui_".
+// Всё, что не в списке, молча отбрасывается.
+export const CLIENT_EVENTS: Record<string, readonly string[]> = {
+  app_opened: ["platform", "tgVersion", "startKind", "colorScheme", "fullscreen", "insideTelegram"],
+  screen_viewed: ["screen"],
+  share_link_copied: [],
+  store_link_clicked: ["store"],
+  fundraiser_link_clicked: [],
+  sbp_details_copied: ["field"],
+  calendar_add_clicked: [],
+  calendar_subscribe_clicked: [],
+  form_opened: ["form"],
+  error_shown: ["code", "screen"],
+  wishlist_switched: [],
+  onboarding_create_clicked: [],
+};
+
+const CLIENT_LIMIT_PER_MIN = 120;
+const clientBuckets = new Map<string, { windowStart: number; count: number }>();
+
+// Лимит на пользователя в минуту (в памяти процесса - на один инстанс
+// бэкенда этого достаточно; сверх лимита события молча отбрасываются).
+export function allowClientEvent(key: string, now = Date.now()): boolean {
+  const b = clientBuckets.get(key);
+  if (!b || now - b.windowStart >= 60_000) {
+    clientBuckets.set(key, { windowStart: now, count: 1 });
+    if (clientBuckets.size > 10_000) clientBuckets.clear();
+    return true;
+  }
+  b.count += 1;
+  return b.count <= CLIENT_LIMIT_PER_MIN;
+}
+
+// Оставляет только разрешённые для события поля примитивных типов,
+// строки обрезаются до 100 символов. null - событие не из белого списка.
+export function sanitizeClientEvent(name: unknown, rawProps: unknown): { type: string; props: Record<string, string | number | boolean> } | null {
+  if (typeof name !== "string" || !Object.prototype.hasOwnProperty.call(CLIENT_EVENTS, name)) return null;
+  const allowed = CLIENT_EVENTS[name];
+  const props: Record<string, string | number | boolean> = {};
+  if (rawProps && typeof rawProps === "object") {
+    for (const key of allowed) {
+      const v = (rawProps as Record<string, unknown>)[key];
+      if (typeof v === "string") props[key] = v.slice(0, 100);
+      else if (typeof v === "number" && Number.isFinite(v)) props[key] = v;
+      else if (typeof v === "boolean") props[key] = v;
+    }
+  }
+  return { type: "ui_" + name, props };
+}
+
+// Запись клиентского события (тип уже проверен sanitizeClientEvent).
+export function trackClient(type: string, userId: string | null, props: Record<string, string | number | boolean>): void {
+  try {
+    db.event
+      .create({ data: { type, userId, props: props as Prisma.InputJsonValue } })
+      .catch((err: unknown) => {
+        console.warn("[analytics] не удалось записать событие", type, err instanceof Error ? err.message : err);
+      });
+  } catch (err) {
+    console.warn("[analytics] не удалось записать событие", type, err instanceof Error ? err.message : err);
+  }
+}
 
 export interface TrackContext<T extends EventType> {
   userId?: string | null;

@@ -1,9 +1,20 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
+import { isInsideTelegram, showTelegramBackButton } from "../telegram";
+import { trackEvent } from "../api";
 
 export function Screen({ children }: { children: ReactNode }) {
   return (
-    <div style={{ display: "flex", flexDirection: "column", minHeight: "100vh" }}>
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        minHeight: "100vh",
+        paddingTop: "var(--safe-top)",
+        paddingBottom: "var(--safe-bottom)",
+        boxSizing: "border-box",
+      }}
+    >
       {children}
     </div>
   );
@@ -18,6 +29,15 @@ export function Header({
   backTo?: string;
   action?: ReactNode;
 }) {
+  // ТЗ блок 4, п.5.3: внутри Telegram "Назад" - нативная кнопка клиента
+  // (левый верхний угол в полноэкранном режиме занят "Закрыть").
+  const navigate = useNavigate();
+  const nativeBack = Boolean(backTo) && isInsideTelegram();
+  useEffect(() => {
+    if (!backTo || !nativeBack) return;
+    return showTelegramBackButton(() => navigate(backTo));
+  }, [backTo, nativeBack, navigate]);
+
   return (
     <div
       style={{
@@ -29,7 +49,7 @@ export function Header({
         borderBottom: "1px solid var(--border)",
       }}
     >
-      {backTo && (
+      {backTo && !nativeBack && (
         <Link
           to={backTo}
           aria-label="Назад"
@@ -132,12 +152,13 @@ export function Thumbnail({ src, size = 48 }: { src: string | null; size?: numbe
 // комментарий (название подарка) - см. ItemDetail.tsx. navigator.clipboard
 // недоступен в части старых WebView, поэтому молча деградируем вместо
 // падения - текст всё равно виден и выделяем вручную.
-export function CopyRow({ label, value }: { label: string; value: string }) {
+export function CopyRow({ label, value, onCopied }: { label: string; value: string; onCopied?: () => void }) {
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(value);
+      onCopied?.();
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -191,7 +212,7 @@ export function Fab({ onClick, label }: { onClick: () => void; label: string }) 
       style={{
         position: "fixed",
         right: 20,
-        bottom: 24,
+        bottom: "calc(24px + var(--safe-bottom))",
         width: 56,
         height: 56,
         borderRadius: 18,
@@ -371,7 +392,8 @@ export function BottomSheet({
           position: "relative",
           width: "100%",
           maxWidth: 480,
-          maxHeight: "88vh",
+          maxHeight: "calc(100vh - var(--safe-top) - 24px)",
+          paddingBottom: "var(--safe-bottom)",
           overflowY: "auto",
           background: "var(--bg)",
           borderTopLeftRadius: 20,
@@ -455,6 +477,11 @@ export function Field({
 }
 
 export function ErrorBanner({ message }: { message: string }) {
+  // ТЗ блок 4 (логи): какие ошибки реально видят пользователи. Текст -
+  // наш собственный (describeError), без данных пользователя.
+  useEffect(() => {
+    trackEvent("error_shown", { code: message.slice(0, 100), screen: window.location.pathname.split("/")[1] || "home" });
+  }, [message]);
   return (
     <div
       style={{

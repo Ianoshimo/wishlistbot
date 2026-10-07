@@ -9,6 +9,7 @@ import { upsertUserByTelegramId } from "../services/userUpsert.js";
 import { bot } from "../bot/bot.js";
 import { monthDay, track, type ReserveMode } from "../services/analytics.js";
 import { detectStore } from "../services/linkPreview.js";
+import { MAX_CONTRIBUTORS_CAP } from "./wishlists.js";
 
 // Аналитика: "позиция стала bought" - с датой повода вишлиста (месяц-день),
 // чтобы покупку можно было привязать к событию. Повод дочитывается
@@ -49,7 +50,10 @@ function requireTelegramId(req: FastifyRequest, bodyTelegramId: string | undefin
 // уведомлением только для selfPurchased: получатель жмёт её, бот сам
 // резолвит дарителя(ей) этой позиции (см. bot/bot.ts, bot.callbackQuery
 // "thank:") и пересылает фото/видео напрямую, получатель не видит кому.
-async function notifyOwnerPurchased(app: FastifyInstance, wishlistId: string, itemId: string, selfPurchased: boolean) {
+// thanksAvailable - подарок деньгами: "уже купил сам" (СБП) или сбор по
+// ссылке банка (ТЗ блок 4) - в обоих случаях есть конкретные дарители,
+// которым можно переслать благодарность.
+async function notifyOwnerPurchased(app: FastifyInstance, wishlistId: string, itemId: string, thanksAvailable: boolean) {
   try {
     const wishlist = await db.wishlist.findUnique({
       where: { id: wishlistId },
@@ -59,7 +63,7 @@ async function notifyOwnerPurchased(app: FastifyInstance, wishlistId: string, it
     await bot.api.sendMessage(
       wishlist.owner.telegramId.toString(),
       "🎁 Один из подарков в вашем вишлисте отмечен как купленный",
-      selfPurchased
+      thanksAvailable
         ? { reply_markup: new InlineKeyboard().text("🎁 Поблагодарить дарителя", `thank:${itemId}`) }
         : undefined,
     );
@@ -219,7 +223,7 @@ export async function itemRoutes(app: FastifyInstance) {
       if (allPaid && item.status !== "bought") {
         await db.item.update({ where: { id: itemId }, data: { status: "bought" } });
         trackItemBought(item, "split", shares.length, user.id);
-        await notifyOwnerPurchased(app, item.wishlistId, item.id, item.selfPurchased);
+        await notifyOwnerPurchased(app, item.wishlistId, item.id, item.selfPurchased || Boolean(item.fundraiserUrl));
       }
       return { status: allPaid ? "bought" : "reserved" };
     }
@@ -244,7 +248,7 @@ export async function itemRoutes(app: FastifyInstance) {
     // купленной (бронь всегда чужая, см. cannot_reserve_own_item выше) -
     // значит уведомляемый владелец и дёргающий этот роут всегда разные
     // люди, отдельная проверка не нужна.
-    await notifyOwnerPurchased(app, item.wishlistId, item.id, item.selfPurchased);
+    await notifyOwnerPurchased(app, item.wishlistId, item.id, item.selfPurchased || Boolean(item.fundraiserUrl));
 
     return { status: "bought" };
   });
@@ -271,6 +275,12 @@ export async function itemRoutes(app: FastifyInstance) {
       where: { id: itemId },
       data: { priority: !item.priority },
     });
+    track("item_priority_toggled", {
+      userId: item.wishlist.ownerId,
+      wishlistId: item.wishlistId,
+      itemId,
+      props: { priority: updated.priority },
+    });
     return { priority: updated.priority };
   });
 
@@ -286,17 +296,48 @@ export async function itemRoutes(app: FastifyInstance) {
         title: z.string().min(1).optional(),
         price: z.number().int().positive().nullable().optional(),
         url: z.string().url().regex(/^https?:\/\//i, "invalid_url_scheme").optional(),
+        // ТЗ блок 4, п.3: число участников складчины и ссылка на сбор
+        // меняются и после создания. null у ссылки - убрать её.
+        maxContributors: z.number().int().min(1).max(MAX_CONTRIBUTORS_CAP).optional(),
+        fundraiserUrl: z.string().url().regex(/^https?:\/\//i, "invalid_url_scheme").nullable().optional(),
       })
       .parse(req.body);
     const telegramId = requireTelegramId(req, body.telegramId);
     if (!telegramId) return reply.code(401).send({ error: "unauthorized" });
 
-    const item = await db.item.findUniqueOrThrow({
+    const owned = await db.item.findUniqueOrThrow({
       where: { id: itemId },
       include: { wishlist: { include: { owner: true } } },
     });
-    if (item.wishlist.owner.telegramId !== BigInt(telegramId)) {
+    if (owned.wishlist.owner.telegramId !== BigInt(telegramId)) {
       return reply.code(403).send({ error: "not_your_wishlist" });
+    }
+
+    // Снимаем просроченные брони/доли до проверок - считаем только живых
+    // участников (см. срок доли в services/reservation.ts).
+    const current = await resolveItem(itemId);
+    const joined = current.maxContributors > 1 ? current.giftShares.length : 0;
+    const nextMax = body.maxContributors ?? current.maxContributors;
+    const nextFundraiser = body.fundraiserUrl !== undefined ? body.fundraiserUrl : current.fundraiserUrl;
+
+    if (nextMax !== current.maxContributors) {
+      if (nextMax > 1 && !current.selfPurchased && !nextFundraiser) {
+        return reply.code(400).send({ error: "split_needs_payment_target" });
+      }
+      if (current.maxContributors === 1 && nextMax > 1 && (current.reservedByUserId || current.status !== "available")) {
+        return reply.code(409).send({ error: "split_item_already_reserved" });
+      }
+      if (nextMax === 1 && joined > 0) {
+        return reply.code(409).send({ error: "contributors_below_joined", joined });
+      }
+      if (nextMax > 1 && nextMax < joined) {
+        return reply.code(409).send({ error: "contributors_below_joined", joined });
+      }
+    }
+    // Ссылку на сбор нельзя убрать, пока по ней идёт складчина без СБП -
+    // дарителям некуда будет переводить.
+    if (nextMax > 1 && !current.selfPurchased && !nextFundraiser) {
+      return reply.code(400).send({ error: "split_needs_payment_target" });
     }
 
     await db.item.update({
@@ -305,15 +346,38 @@ export async function itemRoutes(app: FastifyInstance) {
         title: body.title,
         price: body.price,
         url: body.url,
+        maxContributors: body.maxContributors,
+        fundraiserUrl: body.fundraiserUrl,
       },
     });
+
+    const changed = (["title", "price", "url", "maxContributors", "fundraiserUrl"] as const).filter(
+      (k) => body[k] !== undefined,
+    );
+    track("item_edited", { userId: owned.wishlist.ownerId, wishlistId: owned.wishlistId, itemId, props: { fields: [...changed] } });
+    if (nextMax !== current.maxContributors || (body.fundraiserUrl !== undefined && body.fundraiserUrl !== current.fundraiserUrl)) {
+      track("split_settings_changed", {
+        userId: owned.wishlist.ownerId,
+        wishlistId: owned.wishlistId,
+        itemId,
+        props: { from: current.maxContributors, to: nextMax, fundraiser: Boolean(nextFundraiser) },
+      });
+    }
+
+    // ТЗ блок 4, п.3.5: уменьшили число мест до числа уже оплативших -
+    // складчина собрана, позиция становится купленной.
+    if (nextMax > 1 && current.status !== "bought" && joined === nextMax && current.giftShares.every((s) => s.paid)) {
+      await db.item.update({ where: { id: itemId }, data: { status: "bought" } });
+      trackItemBought(current, "split", joined, owned.wishlist.ownerId);
+      await notifyOwnerPurchased(app, owned.wishlistId, itemId, current.selfPurchased || Boolean(nextFundraiser));
+    }
 
     const updated = await resolveItem(itemId);
     // Правит только владелец, и об изменении полей брони/доли речи не
     // идёт - viewerUserId не важен (владелец не бронирует сам у себя,
     // см. cannot_reserve_own_item), а isOwnerViewer=true просто
     // позволяет сразу увидеть раскрывшихся дарителей, как и на GET.
-    return serializeItemView(updated, updated.giftShares, item.wishlist.owner.sbpPhone, null, true);
+    return serializeItemView(updated, updated.giftShares, owned.wishlist.owner.sbpPhone, null, true);
   });
 
   // Удаление позиции (Беклог Б-2/Н-4) зарегистрировано в

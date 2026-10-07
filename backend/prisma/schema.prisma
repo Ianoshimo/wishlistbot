@@ -110,6 +110,13 @@ model Item {
   maxContributors Int         @default(1)
   giftShares      GiftShare[]
 
+  // Сбор по ссылке банка (ТЗ блок 4, 2026-10-07) - для дорогого ещё не
+  // купленного подарка: получатель заранее создаёт сбор в приложении
+  // банка и вставляет ссылку, друзья скидываются через банк. Деньги через
+  // платформу не идут. Складчина (maxContributors > 1) разрешена при
+  // selfPurchased ИЛИ fundraiserUrl.
+  fundraiserUrl String?
+
   createdAt DateTime @default(now())
 }
 

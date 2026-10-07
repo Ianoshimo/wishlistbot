@@ -1,3 +1,4 @@
+import { trackEvent } from "../api";
 import { useState } from "react";
 import { useParams } from "react-router-dom";
 import { Header, Screen } from "../components/UI";
@@ -12,6 +13,7 @@ export function ShareWishlist() {
 
   const copy = async () => {
     await navigator.clipboard.writeText(link);
+    trackEvent("share_link_copied");
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
