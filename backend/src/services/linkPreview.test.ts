@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
+  createSafeLookup,
   deriveNameFromUrl,
   isPreviewForRequestedProduct,
   isPrivateIp,
@@ -119,4 +120,88 @@ test("isPrivateIp: публичные адреса", () => {
   for (const ip of ["8.8.8.8", "93.158.134.3", "172.15.0.1", "172.32.0.1", "100.63.0.1", "100.128.0.1", "2a02:6b8::2:242", "::ffff:8.8.8.8"]) {
     assert.equal(isPrivateIp(ip), false, ip);
   }
+});
+
+// QB4-7 (DNS rebinding): проверка адреса встроена в резолв сокета -
+// подключение идёт ровно к проверенному адресу.
+function runLookup(
+  addresses: { address: string; family: number }[],
+  options: { all?: boolean; family?: number } = {},
+): Promise<{ err: (Error & { code?: string }) | null; address: unknown; family?: number }> {
+  const lookup = createSafeLookup((_host, cb) => cb(null, addresses));
+  return new Promise((resolve) => {
+    lookup("example.test", options as never, ((err: Error | null, address: unknown, family?: number) =>
+      resolve({ err, address, family })) as never);
+  });
+}
+
+test("createSafeLookup: публичный адрес отдаётся сокету как есть", async () => {
+  const one = await runLookup([{ address: "93.184.216.34", family: 4 }]);
+  assert.equal(one.err, null);
+  assert.equal(one.address, "93.184.216.34");
+  assert.equal(one.family, 4);
+
+  const all = await runLookup(
+    [
+      { address: "93.184.216.34", family: 4 },
+      { address: "2606:2800:220:1::1", family: 6 },
+    ],
+    { all: true },
+  );
+  assert.equal(all.err, null);
+  assert.deepEqual(all.address, [
+    { address: "93.184.216.34", family: 4 },
+    { address: "2606:2800:220:1::1", family: 6 },
+  ]);
+
+  const v6only = await runLookup(
+    [
+      { address: "93.184.216.34", family: 4 },
+      { address: "2606:2800:220:1::1", family: 6 },
+    ],
+    { family: 6 },
+  );
+  assert.equal(v6only.address, "2606:2800:220:1::1");
+});
+
+test("createSafeLookup: внутренний адрес в резолве - подключения нет", async () => {
+  for (const addresses of [
+    [{ address: "127.0.0.1", family: 4 }],
+    [{ address: "10.0.0.5", family: 4 }],
+    [{ address: "169.254.169.254", family: 4 }],
+    [{ address: "::1", family: 6 }],
+    [{ address: "::ffff:192.168.1.1", family: 6 }],
+    // Смешанный ответ: публичная и внутренняя запись сразу.
+    [
+      { address: "93.184.216.34", family: 4 },
+      { address: "192.168.0.10", family: 4 },
+    ],
+    [],
+  ]) {
+    for (const options of [{}, { all: true }]) {
+      const res = await runLookup(addresses, options);
+      assert.ok(res.err, `ожидалась ошибка для ${JSON.stringify(addresses)}`);
+      assert.notEqual(res.address, "127.0.0.1");
+    }
+  }
+});
+
+test("createSafeLookup: rebinding - каждый резолв проверяется заново", async () => {
+  // Первый ответ DNS - публичный, второй - внутренний (как при rebinding).
+  const answers = [
+    [{ address: "93.184.216.34", family: 4 }],
+    [{ address: "127.0.0.1", family: 4 }],
+  ];
+  let call = 0;
+  const lookup = createSafeLookup((_host, cb) => cb(null, answers[call++]));
+  const ask = () =>
+    new Promise<{ err: Error | null; address: unknown }>((resolve) =>
+      lookup("rebind.test", {} as never, ((err: Error | null, address: unknown) => resolve({ err, address })) as never),
+    );
+  const first = await ask();
+  assert.equal(first.err, null);
+  assert.equal(first.address, "93.184.216.34");
+  const second = await ask();
+  assert.ok(second.err);
+  assert.equal((second.err as Error).message, "private_address");
 });

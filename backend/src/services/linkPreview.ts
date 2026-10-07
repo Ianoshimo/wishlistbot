@@ -1,5 +1,6 @@
-import { lookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import { lookup as dnsLookup, type LookupAddress } from "node:dns";
+import { isIP, type LookupFunction } from "node:net";
+import { Agent, fetch as undiciFetch, type RequestInit, type Response } from "undici";
 
 // Продукт: автоподгрузка фото по ссылке на товар вместо ручной загрузки
 // (решение 2026-10-02, без партнёрских интеграций - см.
@@ -45,11 +46,16 @@ export function isPrivateIp(rawIp: string): boolean {
 // SSRF-защита: ссылку даёт пользователь в поле "url" позиции, сервер
 // ходит по ней сам - нужно убедиться, что она ведёт наружу, а не на
 // localhost/внутреннюю сеть (в т.ч. через редирект).
-async function assertPublicHttpUrl(url: URL): Promise<void> {
+//
+// Здесь - только то, что видно по самой ссылке (схема, IP-литерал,
+// localhost). Имя хоста проверяется в момент подключения - см.
+// createSafeLookup ниже.
+function assertPublicHttpUrl(url: URL): void {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error("unsupported_protocol");
   }
-  const host = url.hostname;
+  // [::1] в URL.hostname приходит в квадратных скобках.
+  const host = url.hostname.replace(/^\[|\]$/g, "");
   if (isIP(host)) {
     if (isPrivateIp(host)) throw new Error("private_address");
     return;
@@ -57,13 +63,50 @@ async function assertPublicHttpUrl(url: URL): Promise<void> {
   if (host === "localhost" || host.endsWith(".localhost")) {
     throw new Error("private_address");
   }
-  // Все адреса, а не только первый: у хоста может быть и публичная, и
-  // внутренняя A-запись.
-  const resolved = await lookup(host, { all: true });
-  if (resolved.length === 0 || resolved.some((r) => isPrivateIp(r.address))) {
-    throw new Error("private_address");
-  }
 }
+
+type Resolver = (
+  hostname: string,
+  callback: (err: NodeJS.ErrnoException | null, addresses: LookupAddress[]) => void,
+) => void;
+
+const systemResolver: Resolver = (hostname, callback) =>
+  dnsLookup(hostname, { all: true }, callback);
+
+// QA блока 4, QB4-7 (DNS rebinding): раньше адрес проверялся отдельным
+// dns.lookup, а fetch резолвил хост заново - домен с коротким TTL мог
+// первым ответом отдать публичный адрес, вторым - внутренний. Теперь
+// проверка встроена в сам резолв, которым пользуется сокет: подключаемся
+// ровно к тому адресу, который только что проверили. Имя хоста в URL не
+// меняется, поэтому SNI и заголовок Host для https остаются правильными.
+// Все адреса, а не только первый: у хоста может быть и публичная, и
+// внутренняя A-запись (а happy eyeballs перебирает их все).
+export function createSafeLookup(resolve: Resolver = systemResolver): LookupFunction {
+  return (hostname, options, callback) => {
+    resolve(hostname, (err, addresses) => {
+      if (err) return callback(err, "", 0);
+      const blocked = addresses.length === 0 || addresses.some((a) => isPrivateIp(a.address));
+      if (blocked) {
+        const denied = Object.assign(new Error("private_address"), { code: "EPRIVATEADDR" });
+        return callback(denied, "", 0);
+      }
+      const family = options.family === 4 || options.family === 6 ? options.family : 0;
+      const matching = family ? addresses.filter((a) => a.family === family) : addresses;
+      if (matching.length === 0) {
+        return callback(Object.assign(new Error("no_address"), { code: "ENOTFOUND" }), "", 0);
+      }
+      if (options.all) {
+        (callback as unknown as (e: null, a: LookupAddress[]) => void)(null, matching);
+      } else {
+        callback(null, matching[0].address, matching[0].family);
+      }
+    });
+  };
+}
+
+// Отдельный агент только для превью - со своим lookup на каждом
+// подключении (в т.ч. к адресу из редиректа).
+const previewAgent = new Agent({ connect: { lookup: createSafeLookup() } });
 
 const MAX_REDIRECTS = 5;
 
@@ -74,8 +117,8 @@ const MAX_REDIRECTS = 5;
 async function fetchPublic(start: URL, init: RequestInit): Promise<Response> {
   let current = start;
   for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
-    await assertPublicHttpUrl(current);
-    const res = await fetch(current, { ...init, redirect: "manual" });
+    assertPublicHttpUrl(current);
+    const res = await undiciFetch(current, { ...init, redirect: "manual", dispatcher: previewAgent });
     if (res.status < 300 || res.status >= 400) return res;
     const location = res.headers.get("location");
     if (!location) return res;
