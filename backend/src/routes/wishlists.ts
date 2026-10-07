@@ -22,7 +22,7 @@ function requireTelegramId(req: FastifyRequest, bodyTelegramId: string | undefin
 // ссылке без отдельной регистрации, личность дарителя не раскрывается
 // нигде в ответах (см. services/itemView.ts serializeItemView).
 
-const PHONE_RE = /^[\d\s()+-]{10,20}$/;
+export const PHONE_RE = /^[\d\s()+-]{10,20}$/;
 // ТЗ блок 4: складчина до 100 участников (раньше 10).
 export const MAX_CONTRIBUTORS_CAP = 100;
 // "Сделай 3 и названия для них" (CLAUDE.md, 2026-10-02) - продуктовый
@@ -362,7 +362,9 @@ export async function wishlistRoutes(app: FastifyInstance) {
       {
         source: "app",
         ownerUserId: wishlist.ownerId,
-        fundraiserUrl: (body.maxContributors ?? 1) > 1 ? body.fundraiserUrl : undefined,
+        // Ссылка на сбор и "уже купил сам" взаимоисключающие: деньги идут
+        // либо на номер СБП, либо в сбор (ТЗ редактирования всех полей).
+        fundraiserUrl: (body.maxContributors ?? 1) > 1 && !body.selfPurchased ? body.fundraiserUrl : undefined,
       },
     );
     // Новая позиция никогда не забронирована в момент создания.

@@ -57,8 +57,19 @@ export interface EventProps {
   // Получатель отправил благодарность (фото/видео) дарителю(ям) через бота.
   thanks_sent: { mediaType: "photo" | "video" | "video_note"; recipients: number; delivered: number };
   // ТЗ блок 4 (2026-10-07): логи "всего и вся".
-  // Владелец отредактировал позицию - только имена изменённых полей.
-  item_edited: { fields: string[] };
+  // Владелец отредактировал позицию - только имена изменённых полей
+  // (sbpPhone - только имя, без значения) и состояние после правки.
+  item_edited: {
+    fields: string[];
+    status: string;
+    mode: ReserveMode;
+    selfPurchased: boolean;
+    contributors: number;
+    previewRefreshed: boolean;
+  };
+  // Правка режима подарка отклонена правилами (ТЗ редактирования всех
+  // полей): reason - код ошибки API.
+  item_edit_blocked: { reason: string; status: string; mode: ReserveMode; contributors: number };
   item_deleted: { status: string; mode: ReserveMode; contributors: number };
   item_priority_toggled: { priority: boolean };
   wishlist_renamed: Record<string, never>;
@@ -83,6 +94,7 @@ export const EVENT_TYPES = [
   "calendar_feed_fetched",
   "thanks_sent",
   "item_edited",
+  "item_edit_blocked",
   "item_deleted",
   "item_priority_toggled",
   "wishlist_renamed",

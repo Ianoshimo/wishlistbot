@@ -9,7 +9,9 @@ import { upsertUserByTelegramId } from "../services/userUpsert.js";
 import { bot } from "../bot/bot.js";
 import { monthDay, track, type ReserveMode } from "../services/analytics.js";
 import { detectStore } from "../services/linkPreview.js";
-import { MAX_CONTRIBUTORS_CAP } from "./wishlists.js";
+import { MAX_CONTRIBUTORS_CAP, PHONE_RE } from "./wishlists.js";
+import { planItemEdit } from "../services/itemEdit.js";
+import { fetchPreviewWithFallback } from "../services/itemCreate.js";
 
 // Аналитика: "позиция стала bought" - с датой повода вишлиста (месяц-день),
 // чтобы покупку можно было привязать к событию. Повод дочитывается
@@ -293,10 +295,11 @@ export async function itemRoutes(app: FastifyInstance) {
     return { priority: updated.priority };
   });
 
-  // Редактирование позиции (CLAUDE.md, 2026-10-01) - раньше опечатку в
-  // цене/ссылке можно было только удалить и добавить заново. Только
-  // владелец, только явно присланные поля - без повторной подгрузки
-  // превью, правка нужна для быстрого исправления, а не пересоздания.
+  // Редактирование позиции (CLAUDE.md, 2026-10-01; с 2026-10-07 - все
+  // поля, ТЗ `Продукт/тз-редактирование-всех-полей.md`). Только владелец,
+  // только явно присланные поля. Правила режима подарка (уже купил сам /
+  // складчина / сбор) - в services/itemEdit.ts (planItemEdit), здесь
+  // только чтение состояния и применение плана.
   app.patch("/api/items/:itemId", async (req, reply) => {
     const { itemId } = z.object({ itemId: z.string() }).parse(req.params);
     const body = z
@@ -309,11 +312,20 @@ export async function itemRoutes(app: FastifyInstance) {
         // меняются и после создания. null у ссылки - убрать её.
         maxContributors: z.number().int().min(1).max(MAX_CONTRIBUTORS_CAP).optional(),
         fundraiserUrl: z.string().url().regex(/^https?:\/\//i, "invalid_url_scheme").nullable().optional(),
+        // "Уже купил(а) сам(а)" и номер СБП - как при создании.
+        selfPurchased: z.boolean().optional(),
+        sbpPhone: z.string().regex(PHONE_RE, "invalid_phone").optional(),
+        priority: z.boolean().optional(),
+        // Подтянуть фото (и название, если его не меняли вручную) заново
+        // по ссылке - как при создании.
+        refreshPreview: z.boolean().optional(),
       })
       .parse(req.body);
     const telegramId = requireTelegramId(req, body.telegramId);
     if (!telegramId) return reply.code(401).send({ error: "unauthorized" });
 
+    // Владелец проверяется до любых проверок режима - посторонний не
+    // узнаёт даже статус позиции.
     const owned = await db.item.findUniqueOrThrow({
       where: { id: itemId },
       include: { wishlist: { include: { owner: true } } },
@@ -326,76 +338,115 @@ export async function itemRoutes(app: FastifyInstance) {
     // участников (см. срок доли в services/reservation.ts).
     const current = await resolveItem(itemId);
     const joined = current.maxContributors > 1 ? current.giftShares.length : 0;
-    const nextMax = body.maxContributors ?? current.maxContributors;
-    // QA блока 4, QB4-3: без складчины ссылка на сбор не нужна - при
-    // maxContributors 1 (в т.ч. выключение складчины) обнуляем её.
-    const nextFundraiser =
-      nextMax > 1 ? (body.fundraiserUrl !== undefined ? body.fundraiserUrl : current.fundraiserUrl) : null;
-
-    if (nextMax !== current.maxContributors) {
-      // QA блока 4, QB4-4: собранная (bought) складчина закрыта - новые
-      // места всё равно не открылись бы, а карточка показывала бы
-      // "участвуют 3 из 10" при статусе "Куплено".
-      if (current.status === "bought") {
-        return reply.code(409).send({ error: "item_already_bought" });
-      }
-      if (nextMax > 1 && !current.selfPurchased && !nextFundraiser) {
-        return reply.code(400).send({ error: "split_needs_payment_target" });
-      }
-      if (current.maxContributors === 1 && nextMax > 1 && (current.reservedByUserId || current.status !== "available")) {
-        return reply.code(409).send({ error: "split_item_already_reserved" });
-      }
-      if (nextMax === 1 && joined > 0) {
-        return reply.code(409).send({ error: "contributors_below_joined", joined });
-      }
-      if (nextMax > 1 && nextMax < joined) {
-        return reply.code(409).send({ error: "contributors_below_joined", joined });
-      }
+    const ownerPhone = owned.wishlist.owner.sbpPhone;
+    const plan = planItemEdit(
+      {
+        status: current.status,
+        selfPurchased: current.selfPurchased,
+        maxContributors: current.maxContributors,
+        fundraiserUrl: current.fundraiserUrl,
+        reservedByUserId: current.reservedByUserId,
+        joined,
+      },
+      {
+        selfPurchased: body.selfPurchased,
+        maxContributors: body.maxContributors,
+        fundraiserUrl: body.fundraiserUrl,
+        sbpPhone: body.sbpPhone,
+      },
+      ownerPhone,
+    );
+    if (!plan.ok) {
+      track("item_edit_blocked", {
+        userId: owned.wishlist.ownerId,
+        wishlistId: owned.wishlistId,
+        itemId,
+        props: {
+          reason: plan.error,
+          status: current.status,
+          mode: current.maxContributors > 1 ? "split" : "classic",
+          contributors: current.maxContributors > 1 ? joined : current.reservedByUserId ? 1 : 0,
+        },
+      });
+      return reply.code(plan.code).send(plan.joined !== undefined ? { error: plan.error, joined: plan.joined } : { error: plan.error });
     }
-    // Ссылку на сбор нельзя убрать, пока по ней идёт складчина без СБП -
-    // дарителям некуда будет переводить.
-    if (nextMax > 1 && !current.selfPurchased && !nextFundraiser) {
-      return reply.code(400).send({ error: "split_needs_payment_target" });
+
+    // Номер СБП - реквизит владельца, а не позиции (как при создании):
+    // действует для всех его позиций "уже купил сам".
+    if (plan.phoneToSave) {
+      await db.user.update({ where: { id: owned.wishlist.ownerId }, data: { sbpPhone: plan.phoneToSave } });
+    }
+
+    // Фото по новой ссылке - та же подгрузка, что при создании. Не
+    // нашлось - старое фото убираем: оно от другого товара.
+    let imageUrl: string | null | undefined;
+    let previewTitle: string | undefined;
+    if (body.refreshPreview) {
+      const target = body.url ?? current.url;
+      const preview = await fetchPreviewWithFallback(target);
+      imageUrl = preview.imageUrl ?? null;
+      if (body.title === undefined && preview.title) previewTitle = preview.title;
     }
 
     await db.item.update({
       where: { id: itemId },
       data: {
-        title: body.title,
+        title: body.title ?? previewTitle,
         price: body.price,
         url: body.url,
-        maxContributors: body.maxContributors,
-        fundraiserUrl: nextFundraiser !== current.fundraiserUrl ? nextFundraiser : undefined,
+        priority: body.priority,
+        imageUrl,
+        selfPurchased: plan.selfChanged ? plan.selfPurchased : undefined,
+        maxContributors: plan.maxChanged ? plan.maxContributors : undefined,
+        fundraiserUrl: plan.fundraiserChanged ? plan.fundraiserUrl : undefined,
       },
     });
 
-    const changed = (["title", "price", "url", "maxContributors", "fundraiserUrl"] as const).filter(
-      (k) => body[k] !== undefined,
+    const changed: string[] = (["title", "price", "url", "priority"] as const).filter(
+      (k) => body[k] !== undefined && body[k] !== current[k],
     );
-    track("item_edited", { userId: owned.wishlist.ownerId, wishlistId: owned.wishlistId, itemId, props: { fields: [...changed] } });
-    if (nextMax !== current.maxContributors || nextFundraiser !== current.fundraiserUrl) {
+    if (plan.selfChanged) changed.push("selfPurchased");
+    if (plan.maxChanged) changed.push("maxContributors");
+    if (plan.fundraiserChanged) changed.push("fundraiserUrl");
+    if (plan.phoneToSave) changed.push("sbpPhone");
+    if (body.refreshPreview) changed.push("imageUrl");
+    track("item_edited", {
+      userId: owned.wishlist.ownerId,
+      wishlistId: owned.wishlistId,
+      itemId,
+      props: {
+        fields: changed,
+        status: current.status,
+        mode: plan.maxContributors > 1 ? "split" : "classic",
+        selfPurchased: plan.selfPurchased,
+        contributors: current.maxContributors > 1 ? joined : current.reservedByUserId ? 1 : 0,
+        previewRefreshed: Boolean(body.refreshPreview),
+      },
+    });
+    if (plan.maxChanged || plan.fundraiserChanged) {
       track("split_settings_changed", {
         userId: owned.wishlist.ownerId,
         wishlistId: owned.wishlistId,
         itemId,
-        props: { from: current.maxContributors, to: nextMax, fundraiser: Boolean(nextFundraiser) },
+        props: { from: current.maxContributors, to: plan.maxContributors, fundraiser: Boolean(plan.fundraiserUrl) },
       });
     }
 
     // ТЗ блок 4, п.3.5: уменьшили число мест до числа уже оплативших -
     // складчина собрана, позиция становится купленной.
+    const nextMax = plan.maxContributors;
     if (nextMax > 1 && current.status !== "bought" && joined === nextMax && current.giftShares.every((s) => s.paid)) {
       await db.item.update({ where: { id: itemId }, data: { status: "bought" } });
       trackItemBought(current, "split", joined, owned.wishlist.ownerId);
-      await notifyOwnerPurchased(app, owned.wishlistId, itemId, current.selfPurchased || Boolean(nextFundraiser));
+      await notifyOwnerPurchased(app, owned.wishlistId, itemId, plan.selfPurchased || Boolean(plan.fundraiserUrl));
     }
 
     const updated = await resolveItem(itemId);
-    // Правит только владелец, и об изменении полей брони/доли речи не
-    // идёт - viewerUserId не важен (владелец не бронирует сам у себя,
-    // см. cannot_reserve_own_item), а isOwnerViewer=true просто
-    // позволяет сразу увидеть раскрывшихся дарителей, как и на GET.
-    return serializeItemView(updated, updated.giftShares, owned.wishlist.owner.sbpPhone, null, true);
+    // Правит только владелец - viewerUserId null, поэтому номер СБП в
+    // ответ не попадает (hotfix Н-1: номер видит только держатель брони),
+    // а isOwnerViewer=true позволяет сразу увидеть раскрывшихся дарителей,
+    // как и на GET.
+    return serializeItemView(updated, updated.giftShares, ownerPhone, null, true);
   });
 
   // Удаление позиции (Беклог Б-2/Н-4) зарегистрировано в

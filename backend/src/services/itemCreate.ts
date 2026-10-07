@@ -3,6 +3,24 @@ import { deriveNameFromUrl, detectStore, fetchLinkPreview } from "./linkPreview.
 import { fetchWildberriesViaApify, isWildberriesUrl } from "./wildberriesApify.js";
 import { track, type ItemSource } from "./analytics.js";
 
+// Превью товара (фото/название) - свой парсинг, для Wildberries платный
+// фоллбэк через Apify. Общая для создания позиции и для "Обновить фото по
+// ссылке" при редактировании (ТЗ редактирования всех полей).
+export async function fetchPreviewWithFallback(url: string) {
+  let preview = await fetchLinkPreview(url);
+  if (!preview.title && !preview.imageUrl) {
+    try {
+      const parsed = new URL(url);
+      if (isWildberriesUrl(parsed)) {
+        preview = await fetchWildberriesViaApify(url);
+      }
+    } catch {
+      // невалидный URL отсеивается до вызова этой функции
+    }
+  }
+  return preview;
+}
+
 // Создание позиции по ссылке (подгрузка фото/названия) - вынесено из
 // routes/wishlists.ts, чтобы той же логикой мог воспользоваться бот
 // (пересылка товарной ссылки прямо в чат, см. bot/bot.ts), а не только
@@ -18,19 +36,7 @@ export async function createItemFromUrl(
   // событие item_added пишется здесь, в одном месте для мини-аппа и бота.
   meta?: { source: ItemSource; ownerUserId: string; fundraiserUrl?: string },
 ) {
-  let preview = await fetchLinkPreview(url);
-
-  if (!preview.title && !preview.imageUrl) {
-    try {
-      const parsed = new URL(url);
-      if (isWildberriesUrl(parsed)) {
-        preview = await fetchWildberriesViaApify(url);
-      }
-    } catch {
-      // невалидный URL отсеивается до вызова этой функции
-    }
-  }
-
+  const preview = await fetchPreviewWithFallback(url);
   const isDirectImage = preview.imageUrl === url;
 
   const item = await db.item.create({
