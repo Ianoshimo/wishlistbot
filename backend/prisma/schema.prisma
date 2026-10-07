@@ -105,8 +105,8 @@ model Item {
   // maxContributors = 1 (по умолчанию) - обычный classic-путь на
   // reservedByUserId/TTL выше, без изменений. maxContributors > 1 -
   // режим "скинуться", у неоплаченной доли тот же TTL, что у брони
-  // (см. GiftShare), само значение не редактируется после создания
-  // позиции.
+  // (см. GiftShare). Меняется при редактировании, пока позиция не
+  // куплена и мест не меньше присоединившихся (services/itemEdit.ts).
   maxContributors Int         @default(1)
   giftShares      GiftShare[]
 
