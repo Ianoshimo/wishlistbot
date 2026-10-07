@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { api, describeError, type Item } from "../api";
+import { api, apiError, uiError, type Item, type UiError } from "../api";
 import { ErrorBanner, Field, PrimaryButton } from "./UI";
 
 // Форма "Добавить позицию" - раньше отдельная страница (/w/:slug/add),
@@ -20,17 +20,23 @@ function validationError(
   split: boolean,
   maxContributors: string,
   fundraiserUrl: string,
-): string | null {
-  if (!/^https?:\/\/.+/i.test(url)) return "Ссылка должна начинаться с http:// или https://";
-  if (price && Number(price) <= 0) return "Цена должна быть больше нуля";
-  if (selfPurchased && sbpPhone.replace(/\D/g, "").length < 10) return "Укажите номер телефона для перевода";
+): UiError | null {
+  // Ключи (первый аргумент) - машинный код ошибки для аналитики (QB4-5).
+  if (!/^https?:\/\/.+/i.test(url)) return uiError("invalid_url", "Ссылка должна начинаться с http:// или https://");
+  if (price && Number(price) <= 0) return uiError("invalid_price", "Цена должна быть больше нуля");
+  if (selfPurchased && sbpPhone.replace(/\D/g, "").length < 10) {
+    return uiError("invalid_phone", "Укажите номер телефона для перевода");
+  }
   if (split) {
     const n = Number(maxContributors);
     if (!Number.isInteger(n) || n < 2 || n > MAX_CONTRIBUTORS_CAP) {
-      return `Сколько человек может скинуться - от 2 до ${MAX_CONTRIBUTORS_CAP}`;
+      return uiError("invalid_contributors", `Сколько человек может скинуться - от 2 до ${MAX_CONTRIBUTORS_CAP}`);
     }
     if (!selfPurchased && !/^https?:\/\/.+/i.test(fundraiserUrl)) {
-      return "Вставьте ссылку на сбор из приложения банка - по ней друзья будут скидываться";
+      return uiError(
+        "fundraiser_url_required",
+        "Вставьте ссылку на сбор из приложения банка - по ней друзья будут скидываться",
+      );
     }
   }
   return null;
@@ -49,7 +55,7 @@ export function AddItemForm({ slug, onAdded }: { slug: string; onAdded: (item: I
   // Сбор по ссылке банка (ТЗ блок 4) - для ещё не купленного подарка.
   const [fundraiserUrl, setFundraiserUrl] = useState("");
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<UiError | null>(null);
 
   // Номер - реквизит получателя, не отдельной позиции: подставляем уже
   // сохранённый с прошлого раза, чтобы не просить вводить заново.
@@ -85,7 +91,7 @@ export function AddItemForm({ slug, onAdded }: { slug: string; onAdded: (item: I
       });
       onAdded(item);
     } catch (err) {
-      setError(describeError(err));
+      setError(apiError(err));
     } finally {
       setSaving(false);
     }
@@ -94,7 +100,6 @@ export function AddItemForm({ slug, onAdded }: { slug: string; onAdded: (item: I
   return (
     <>
       <div style={{ padding: "4px 20px 20px", display: "flex", flexDirection: "column", gap: 20 }}>
-        {error && <ErrorBanner message={error} />}
         <Field label="Ссылка на товар" value={url} onChange={setUrl} placeholder="https://ozon.ru/product/..." type="url" />
         <Field label="Название (необязательно)" value={title} onChange={setTitle} placeholder="Например: наушники Sony" />
         <Field label="Цена, ₽ (необязательно)" value={price} onChange={setPrice} placeholder="6990" type="number" min="0" />
@@ -159,7 +164,11 @@ export function AddItemForm({ slug, onAdded }: { slug: string; onAdded: (item: I
             <input
               type="checkbox"
               checked={split}
-              onChange={(e) => setSplit(e.target.checked)}
+              onChange={(e) => {
+                setSplit(e.target.checked);
+                // QB4-3: без складчины ссылка на сбор не нужна - не держим её.
+                if (!e.target.checked) setFundraiserUrl("");
+              }}
               style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }}
             />
             <span>
@@ -200,7 +209,10 @@ export function AddItemForm({ slug, onAdded }: { slug: string; onAdded: (item: I
           />
         )}
       </div>
-      <div style={{ padding: "0 20px 20px" }}>
+      <div style={{ padding: "0 20px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
+        {/* QB4-2: ошибка - рядом с кнопкой, а не вверху длинной прокрученной
+            шторки, где её не видно на 390px. */}
+        {error && <ErrorBanner {...error} screen="add_item" revealParent />}
         {saving && (
           // QA-5: подгрузка фото/названия (особенно Wildberries через
           // Apify) может идти до ~30 с - без пояснения кажется зависанием.

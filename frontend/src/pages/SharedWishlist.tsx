@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { absoluteApiUrl, api, describeError, formatOccasionDate, formatRub, trackEvent, type WishlistResponse } from "../api";
+import { absoluteApiUrl, api, apiError, formatOccasionDate, formatRub, trackEvent, type UiError, type WishlistResponse } from "../api";
 import { openExternalLink } from "../telegram";
 import { ErrorBanner, Header, PriorityStar, Screen, StatusBadge, StoreBadge, Thumbnail } from "../components/UI";
 
@@ -18,7 +18,7 @@ export function SharedWishlist() {
   const navigate = useNavigate();
   const [wishlist, setWishlist] = useState<WishlistResponse | null>(null);
   const [showInvite, setShowInvite] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<UiError | null>(null);
 
   useEffect(() => {
     trackEvent("screen_viewed", { screen: "shared_wishlist" });
@@ -26,7 +26,7 @@ export function SharedWishlist() {
     api
       .getWishlist(slug)
       .then(setWishlist)
-      .catch((err) => setError(describeError(err)));
+      .catch((err) => setError(apiError(err)));
   }, [slug]);
 
   // Беклог В-10: получатель, открывший свою же ссылку "Поделиться" (из
@@ -52,7 +52,7 @@ export function SharedWishlist() {
       <Screen>
         <Header title="Вишлист" />
         <div style={{ padding: 20 }}>
-          <ErrorBanner message={error} />
+          <ErrorBanner {...error} screen="shared_wishlist" />
         </div>
       </Screen>
     );
@@ -156,6 +156,7 @@ export function SharedWishlist() {
           <Link
             key={item.id}
             to={`/item/${item.id}`}
+            state={{ from: `/w/${slug}` }}
             style={{
               display: "flex",
               gap: 12,

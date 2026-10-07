@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
-import { api, describeError, formatRub, trackEvent, type Item } from "../api";
+import { useLocation, useParams } from "react-router-dom";
+import { api, apiError, formatRub, trackEvent, type Item, type UiError } from "../api";
 import { openExternalLink } from "../telegram";
 import { BottomSheet, CopyRow, ErrorBanner, Header, PrimaryButton, Screen, StoreBadge } from "../components/UI";
 
@@ -9,8 +9,9 @@ import { BottomSheet, CopyRow, ErrorBanner, Header, PrimaryButton, Screen, Store
 
 export function ItemDetail() {
   const { itemId = "" } = useParams();
+  const location = useLocation();
   const [item, setItem] = useState<Item | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<UiError | null>(null);
   // СБП-карточка - bottom sheet вместо отдельной страницы (CLAUDE.md,
   // 2026-10-01) - открывается сама сразу после брони, и повторно по кнопке.
   const [sbpSheetOpen, setSbpSheetOpen] = useState(false);
@@ -21,12 +22,26 @@ export function ItemDetail() {
 
   // QA-17: позиция могла быть удалена владельцем (или ссылка битая) -
   // раньше экран оставался полностью пустым без навигации.
-  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<UiError | null>(null);
   const reload = () =>
     api
       .getItem(itemId)
       .then(setItem)
-      .catch((err) => setLoadError(describeError(err)));
+      .catch((err) => setLoadError(apiError(err)));
+
+  // QA блока 4, QB4-1: "Назад" (стрелка вне Telegram и нативная кнопка
+  // внутри) раньше всегда вёл на "/" - даритель из чужого вишлиста попадал
+  // в свой список или на онбординг и терял список друга. Теперь - в
+  // вишлист позиции (slug из ответа API, работает и при заходе по прямой
+  // ссылке без истории); владельцу - в свой список. Пока позиция не
+  // загрузилась (или удалена) - туда, откуда открыли (state ссылки из
+  // SharedWishlist).
+  const fromState = (location.state as { from?: string } | null)?.from;
+  const backTo = item
+    ? item.viewerIsOwner || !item.wishlistSlug
+      ? "/"
+      : `/w/${item.wishlistSlug}`
+    : fromState ?? "/";
   useEffect(() => {
     void reload();
     trackEvent("screen_viewed", { screen: "item" });
@@ -35,9 +50,13 @@ export function ItemDetail() {
   if (loadError && !item) {
     return (
       <Screen>
-        <Header title="Подарок" backTo="/" />
+        <Header title="Подарок" backTo={backTo} />
         <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 12 }}>
-          <ErrorBanner message="Позиция не найдена - возможно, получатель удалил её из вишлиста." />
+          <ErrorBanner
+            code={loadError.code}
+            screen="item"
+            message="Позиция не найдена - возможно, получатель удалил её из вишлиста."
+          />
         </div>
       </Screen>
     );
@@ -79,7 +98,7 @@ export function ItemDetail() {
       await reload();
       if (item.selfPurchased) setSbpSheetOpen(true);
     } catch (err) {
-      setError(describeError(err));
+      setError(apiError(err));
       // QA-16: после конфликта ("уже забронировали") показываем актуальное
       // состояние, а не "свободно" с кнопкой, которая снова упадёт.
       await reload();
@@ -91,15 +110,15 @@ export function ItemDetail() {
       await api.markBought(itemId);
       await reload();
     } catch (err) {
-      setError(describeError(err));
+      setError(apiError(err));
     }
   };
 
   return (
     <Screen>
-      <Header title="Подарок" backTo="/" />
+      <Header title="Подарок" backTo={backTo} />
       <div style={{ padding: 20, display: "flex", flexDirection: "column", gap: 16, flexGrow: 1 }}>
-        {error && <ErrorBanner message={error} />}
+        {error && <ErrorBanner {...error} screen="item" />}
         {item.imageUrl && (
           <img
             src={item.imageUrl}

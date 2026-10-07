@@ -18,7 +18,7 @@ function NotFound() {
     <Screen>
       <Header title="Вишлист-бот" backTo="/" />
       <div style={{ padding: 20 }}>
-        <ErrorBanner message="Такой страницы нет - вернитесь к своему вишлисту." />
+        <ErrorBanner code="page_not_found" screen="not_found" message="Такой страницы нет - вернитесь к своему вишлисту." />
       </div>
     </Screen>
   );

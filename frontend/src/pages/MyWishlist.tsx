@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { api, describeError, formatOccasionDate, formatRub, trackEvent, type Item, type MyWishlistSummary, type WishlistResponse } from "../api";
+import { api, apiError, formatOccasionDate, formatRub, trackEvent, type Item, type MyWishlistSummary, type WishlistResponse, type UiError } from "../api";
 import {
   BottomSheet,
   ErrorBanner,
@@ -31,10 +31,10 @@ export const MY_SLUG_KEY = "wishlistbot_my_slug";
 export function MyWishlist() {
   const [wishlist, setWishlist] = useState<WishlistResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<UiError | null>(null);
   // Отдельно от error (срыв начальной загрузки - на весь экран) - ошибка
   // точечного действия (удаление) не должна заменять собой весь список.
-  const [actionError, setActionError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<UiError | null>(null);
   // FAB "+" и свайв-удаление вместо отдельной страницы/крестик-кнопки
   // (редизайн "Электрик", CLAUDE.md 2026-10-01) - состояние sheet'ов живёт
   // прямо здесь, а не в отдельном роуте.
@@ -82,7 +82,7 @@ export function MyWishlist() {
         const data = await api.getWishlist(slug);
         setWishlist(data);
       } catch (err) {
-        setError(describeError(err));
+        setError(apiError(err));
       } finally {
         setLoading(false);
       }
@@ -96,7 +96,7 @@ export function MyWishlist() {
       const data = await api.getWishlist(slug);
       setWishlist(data);
     } catch (err) {
-      setActionError(describeError(err));
+      setActionError(apiError(err));
     }
   };
 
@@ -106,7 +106,7 @@ export function MyWishlist() {
       <Screen>
         <Header title="Мой вишлист" />
         <div style={{ padding: 20 }}>
-          <ErrorBanner message={error} />
+          <ErrorBanner {...error} screen="my_wishlist" />
         </div>
       </Screen>
     );
@@ -139,7 +139,7 @@ export function MyWishlist() {
       setWishlist((w) => (w ? { ...w, items: w.items.filter((i) => i.id !== itemId) } : w));
       bumpItemCount(wishlist.slug, -1);
     } catch (err) {
-      setActionError(describeError(err));
+      setActionError(apiError(err));
     }
   };
 
@@ -151,7 +151,7 @@ export function MyWishlist() {
         w ? { ...w, items: w.items.map((i) => (i.id === itemId ? { ...i, priority } : i)) } : w,
       );
     } catch (err) {
-      setActionError(describeError(err));
+      setActionError(apiError(err));
     }
   };
 
@@ -230,7 +230,7 @@ export function MyWishlist() {
 
       {actionError && (
         <div style={{ padding: "0 16px 12px" }}>
-          <ErrorBanner message={actionError} />
+          <ErrorBanner {...actionError} screen="my_wishlist" />
         </div>
       )}
 

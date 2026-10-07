@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { isInsideTelegram, showTelegramBackButton } from "../telegram";
 import { trackEvent } from "../api";
@@ -476,14 +476,37 @@ export function Field({
   );
 }
 
-export function ErrorBanner({ message }: { message: string }) {
-  // ТЗ блок 4 (логи): какие ошибки реально видят пользователи. Текст -
-  // наш собственный (describeError), без данных пользователя.
+export function ErrorBanner({
+  message,
+  code,
+  screen,
+  revealParent = false,
+}: {
+  message: string;
+  code: string;
+  screen: string;
+  // Докрутить не только баннер, а весь его блок (баннер + кнопка отправки
+  // в шторках формы) - иначе кнопку выталкивает за нижний край.
+  revealParent?: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  // ТЗ блок 4 (логи): какие ошибки реально видят пользователи. QB4-5:
+  // машинный код (см. UiError в api.ts) и реальный экран/шторка, а не
+  // текст сообщения и первый сегмент адреса (у шторок он всегда "home").
   useEffect(() => {
-    trackEvent("error_shown", { code: message.slice(0, 100), screen: window.location.pathname.split("/")[1] || "home" });
-  }, [message]);
+    trackEvent("error_shown", { code, screen });
+  }, [message, code, screen]);
+  // QB4-2: в длинной прокрученной шторке ошибка могла оказаться за краем
+  // экрана - пользователь жал кнопку и не видел реакции. Докручиваем до
+  // баннера, если его не видно ("nearest" не дёргает видимый).
+  useEffect(() => {
+    const target = revealParent ? ref.current?.parentElement : ref.current;
+    target?.scrollIntoView?.({ block: "nearest", behavior: "smooth" });
+  }, [message, revealParent]);
   return (
     <div
+      ref={ref}
+      role="alert"
       style={{
         padding: 14,
         borderRadius: 14,

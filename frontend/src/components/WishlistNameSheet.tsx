@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { describeError } from "../api";
+import { apiError, uiError, type UiError } from "../api";
 import { ErrorBanner, Field, PrimaryButton } from "./UI";
 
 const TITLE_MAX = 60;
@@ -18,17 +18,17 @@ export function WishlistNameSheet({
 }) {
   const [title, setTitle] = useState(initialTitle);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<UiError | null>(null);
 
   const submit = async () => {
     if (!title.trim()) {
-      setError("Укажите название");
+      setError(uiError("title_required", "Укажите название"));
       return;
     }
     // QA-4: лимит бэкенда - 60 символов; говорим об этом прямо, а не общим
     // "Проверьте введённые данные".
     if (title.trim().length > TITLE_MAX) {
-      setError(`Название - не длиннее ${TITLE_MAX} символов`);
+      setError(uiError("title_too_long", `Название - не длиннее ${TITLE_MAX} символов`));
       return;
     }
     setSaving(true);
@@ -36,7 +36,7 @@ export function WishlistNameSheet({
     try {
       await onSubmit(title.trim());
     } catch (err) {
-      setError(describeError(err));
+      setError(apiError(err));
     } finally {
       setSaving(false);
     }
@@ -44,7 +44,7 @@ export function WishlistNameSheet({
 
   return (
     <div style={{ padding: "4px 20px 24px", display: "flex", flexDirection: "column", gap: 20 }}>
-      {error && <ErrorBanner message={error} />}
+      {error && <ErrorBanner {...error} screen="wishlist_name" />}
       <Field label="Название" value={title} onChange={setTitle} placeholder="Например: Новый год" maxLength={TITLE_MAX} />
       <PrimaryButton onClick={submit} disabled={saving}>
         {saving ? "Сохраняем…" : submitLabel}

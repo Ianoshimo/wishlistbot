@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { absoluteApiUrl, api, describeError, formatOccasionDate, trackEvent } from "../api";
+import { absoluteApiUrl, api, apiError, formatOccasionDate, trackEvent, uiError, type UiError } from "../api";
 import { CopyRow, ErrorBanner, Field, PrimaryButton } from "./UI";
 import { openExternalLink } from "../telegram";
 
@@ -35,7 +35,7 @@ export function CalendarSheet({
   const [title, setTitle] = useState(occasionTitle ?? "");
   const [date, setDate] = useState(toDateInputValue(occasionDate));
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<UiError | null>(null);
 
   const [calendarToken, setCalendarToken] = useState<string | null>(null);
   useEffect(() => {
@@ -50,7 +50,7 @@ export function CalendarSheet({
 
   const save = async () => {
     if (!title.trim() || !date) {
-      setError("Укажите название и дату повода");
+      setError(uiError("occasion_required", "Укажите название и дату повода"));
       return;
     }
     setSaving(true);
@@ -63,7 +63,7 @@ export function CalendarSheet({
       onSaved(result.occasionTitle, result.occasionDate);
       setEditing(false);
     } catch (err) {
-      setError(describeError(err));
+      setError(apiError(err));
     } finally {
       setSaving(false);
     }
@@ -80,7 +80,7 @@ export function CalendarSheet({
       setDate("");
       setEditing(true);
     } catch (err) {
-      setError(describeError(err));
+      setError(apiError(err));
     } finally {
       setSaving(false);
     }
@@ -94,7 +94,7 @@ export function CalendarSheet({
 
   return (
     <div style={{ padding: "4px 20px 24px", display: "flex", flexDirection: "column", gap: 24 }}>
-      {error && <ErrorBanner message={error} />}
+      {error && <ErrorBanner {...error} screen="calendar" />}
 
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: "var(--text-secondary)" }}>Повод этого вишлиста</div>

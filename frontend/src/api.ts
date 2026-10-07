@@ -35,6 +35,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   contributors_below_joined: "Уже присоединилось больше участников - меньше мест поставить нельзя",
   split_needs_payment_target: "Чтобы скинуться, нужен номер для перевода по СБП или ссылка на сбор в банке",
   split_item_already_reserved: "Подарок уже забронирован одним человеком - складчину включить нельзя",
+  item_already_bought: "Подарок уже куплен - число участников менять нельзя",
 };
 
 // Повод хранится как UTC-полночь календарного дня (QA-14) - показываем его
@@ -52,6 +53,29 @@ export function formatRub(kopecks: number): string {
 export function describeError(err: unknown): string {
   const code = err instanceof Error ? err.message : "";
   return ERROR_MESSAGES[code] ?? "Что-то пошло не так, попробуйте ещё раз";
+}
+
+// Ошибка для показа в ErrorBanner: текст для человека + машинный код для
+// аналитики (QA блока 4, QB4-5 - раньше в ui_error_shown.code уходил сам
+// русский текст, ошибки не группировались и ломались при правке текста).
+// code - `error` из ответа API (`item_not_available`), `http_<статус>`,
+// `network` или стабильный ключ клиентской валидации.
+export interface UiError {
+  code: string;
+  message: string;
+}
+
+export function apiError(err: unknown): UiError {
+  const raw = err instanceof Error ? err.message : "";
+  let code = "unknown";
+  if (/^\d{3}$/.test(raw)) code = `http_${raw}`;
+  else if (/^[a-z0-9_]{1,50}$/.test(raw)) code = raw;
+  else if (err instanceof TypeError) code = "network"; // fetch не дошёл до сервера
+  return { code, message: describeError(err) };
+}
+
+export function uiError(code: string, message: string): UiError {
+  return { code, message };
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -115,6 +139,8 @@ export interface Item {
   // Непустой массив приходит только владельцу вишлиста - остальным
   // зрителям бэкенд всегда отдаёт [], даже если кто-то раскрылся (п.2
   // спеки - раскрытие работает только в сторону получателя).
+  // Только в GET /api/items/:id (QB4-1) - куда ведёт "Назад" с экрана подарка.
+  wishlistSlug?: string;
   giverNames: string[];
   // QA-10: зритель - владелец вишлиста (бронировать своё нельзя).
   viewerIsOwner: boolean;
