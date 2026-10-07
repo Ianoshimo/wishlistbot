@@ -35,7 +35,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   contributors_below_joined: "Уже присоединилось больше участников - меньше мест поставить нельзя",
   split_needs_payment_target: "Чтобы скинуться, нужен номер для перевода по СБП или ссылка на сбор в банке",
   split_item_already_reserved: "Подарок уже забронирован одним человеком - складчину включить нельзя",
-  item_already_bought: "Подарок уже куплен - число участников менять нельзя",
+  item_already_bought: "Подарок уже куплен - менять можно только ссылку, название, цену и фото",
+  item_has_givers: "Подарок уже забронирован - способ подарить менять нельзя, чтобы не подвести дарителя",
 };
 
 // Повод хранится как UTC-полночь календарного дня (QA-14) - показываем его
@@ -288,7 +289,17 @@ export const api = {
 
   updateItem: (
     itemId: string,
-    data: { title?: string; price?: number | null; url?: string; maxContributors?: number; fundraiserUrl?: string | null },
+    data: {
+      title?: string;
+      price?: number | null;
+      url?: string;
+      maxContributors?: number;
+      fundraiserUrl?: string | null;
+      selfPurchased?: boolean;
+      sbpPhone?: string;
+      priority?: boolean;
+      refreshPreview?: boolean;
+    },
   ) =>
     request<Item>(`/api/items/${itemId}`, {
       method: "PATCH",

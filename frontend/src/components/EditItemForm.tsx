@@ -1,68 +1,146 @@
-import { useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { api, apiError, uiError, type Item, type UiError } from "../api";
 import { ErrorBanner, Field, PrimaryButton } from "./UI";
 import { MAX_CONTRIBUTORS_CAP } from "./AddItemForm";
 
-// Редактирование позиции (CLAUDE.md, 2026-10-01) - раньше опечатку в
-// цене/ссылке можно было только удалить и добавить заново. Только эти три
-// поля - не трогаем selfPurchased/СБП, это отдельный флоу (AddItemForm).
+// Редактирование позиции (CLAUDE.md, 2026-10-01; с 2026-10-07 - все поля,
+// ТЗ `Продукт/тз-редактирование-всех-полей.md`): всё, что задаётся при
+// создании (AddItemForm), плюс приоритет и "Обновить фото по ссылке".
+// Способ подарить ("уже купил сам", складчина, сбор) меняется, только пока
+// никто не присоединился; у купленной - только косметика. Те же правила
+// проверяет бэкенд (services/itemEdit.ts), здесь - чтобы сразу показать,
+// что заблокировано и почему, а не ловить 409 после "Сохранить".
 
-function validationError(url: string, price: string): UiError | null {
-  if (!/^https?:\/\/.+/i.test(url)) return uiError("invalid_url", "Ссылка должна начинаться с http:// или https://");
-  if (price && Number(price) <= 0) return uiError("invalid_price", "Цена должна быть больше нуля");
-  return null;
+function ToggleRow({
+  checked,
+  onChange,
+  disabled,
+  title,
+  hint,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+  title: string;
+  hint: ReactNode;
+}) {
+  return (
+    <label
+      style={{
+        display: "flex",
+        gap: 12,
+        alignItems: "flex-start",
+        padding: 14,
+        borderRadius: 14,
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.55 : 1,
+      }}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+        style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }}
+      />
+      <span>
+        <span style={{ display: "block", fontSize: 14, fontWeight: 600 }}>{title}</span>
+        <span style={{ display: "block", fontSize: 13, color: "var(--text-secondary)", marginTop: 2 }}>{hint}</span>
+      </span>
+    </label>
+  );
 }
+
+const note = { fontSize: 12.5, color: "var(--text-secondary)" } as const;
 
 export function EditItemForm({ item, onSaved }: { item: Item; onSaved: (item: Item) => void }) {
   const [url, setUrl] = useState(item.url);
   const [title, setTitle] = useState(item.title ?? "");
   const [price, setPrice] = useState(item.price ? String(item.price / 100) : "");
-  // ТЗ блок 4, п.3: число участников складчины и ссылка на сбор
-  // редактируются. 1 - без складчины.
-  const [maxContributors, setMaxContributors] = useState(String(item.maxContributors));
+  const [priority, setPriority] = useState(item.priority);
+  const [selfPurchased, setSelfPurchased] = useState(item.selfPurchased);
+  const [sbpPhone, setSbpPhone] = useState("");
+  const [savedPhone, setSavedPhone] = useState<string | null>(null);
+  const [split, setSplit] = useState(item.maxContributors > 1);
+  const [maxContributors, setMaxContributors] = useState(String(item.maxContributors > 1 ? item.maxContributors : 2));
   const [fundraiserUrl, setFundraiserUrl] = useState(item.fundraiserUrl ?? "");
-  // QB4-4: собранная складчина закрыта - число мест не меняется (бэкенд
-  // всё равно ответит 409 item_already_bought).
-  const contributorsLocked = item.status === "bought";
+  const [refreshPreview, setRefreshPreview] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<UiError | null>(null);
 
+  // Номер СБП - реквизит владельца, а не позиции: подставляем сохранённый.
+  useEffect(() => {
+    api
+      .getMe()
+      .then((me) => {
+        setSavedPhone(me.sbpPhone);
+        if (me.sbpPhone) setSbpPhone(me.sbpPhone);
+      })
+      .catch(() => {
+        // dev-режим без Telegram - поле остаётся пустым для ручного ввода.
+      });
+  }, []);
+
+  const bought = item.status === "bought";
+  // Кто-то уже присоединился: classic-бронь или хотя бы одна доля.
+  const hasGivers = item.maxContributors > 1 ? item.contributorsCount > 0 : item.status !== "available";
+  const modeLocked = bought || hasGivers;
+  const urlChanged = url.trim() !== item.url;
+
   const submit = async () => {
-    const invalid = validationError(url, price);
-    if (invalid) {
-      setError(invalid);
+    const nextUrl = url.trim();
+    if (!/^https?:\/\/.+/i.test(nextUrl)) {
+      setError(uiError("invalid_url", "Ссылка должна начинаться с http:// или https://"));
       return;
     }
-    const n = contributorsLocked ? item.maxContributors : Number(maxContributors);
-    if (!Number.isInteger(n) || n < 1 || n > MAX_CONTRIBUTORS_CAP) {
-      setError(
-        uiError(
-          "invalid_contributors",
-          `Сколько человек может скинуться - от 1 до ${MAX_CONTRIBUTORS_CAP} (1 - без складчины)`,
-        ),
-      );
+    if (price && Number(price) <= 0) {
+      setError(uiError("invalid_price", "Цена должна быть больше нуля"));
       return;
     }
-    // QB4-3: без складчины (1 участник) ссылка на сбор не нужна - очищаем
-    // её, бэкенд делает то же самое.
-    const fund = n > 1 ? fundraiserUrl.trim() : "";
+    if (selfPurchased && sbpPhone.replace(/\D/g, "").length < 10) {
+      setError(uiError("invalid_phone", "Укажите номер телефона для перевода"));
+      return;
+    }
+    const n = split ? Number(maxContributors) : 1;
+    if (split && (!Number.isInteger(n) || n < 2 || n > MAX_CONTRIBUTORS_CAP)) {
+      setError(uiError("invalid_contributors", `Сколько человек может скинуться - от 2 до ${MAX_CONTRIBUTORS_CAP}`));
+      return;
+    }
+    if (split && item.maxContributors > 1 && n < item.contributorsCount) {
+      setError(uiError("contributors_below_joined", `Уже участвуют ${item.contributorsCount} - меньше мест поставить нельзя`));
+      return;
+    }
+    // QB4-3: ссылка на сбор - только у складчины без "уже купил сам".
+    const fund = split && !selfPurchased ? fundraiserUrl.trim() : "";
     if (fund && !/^https?:\/\/.+/i.test(fund)) {
       setError(uiError("invalid_fundraiser_url", "Ссылка на сбор должна начинаться с http:// или https://"));
       return;
     }
-    if (n > 1 && !item.selfPurchased && !fund) {
+    if (split && !selfPurchased && !fund) {
       setError(uiError("fundraiser_url_required", "Чтобы скинуться, вставьте ссылку на сбор из приложения банка"));
       return;
     }
+
+    // Шлём только изменённое - бэкенд и так сравнивает с текущим, но
+    // меньше шансов упереться в блокировку режима на ровном месте.
+    const nextPrice = price ? Math.round(Number(price) * 100) : null;
+    const nextTitle = title.trim();
+    const phone = sbpPhone.trim();
     setSaving(true);
     setError(null);
     try {
       const updated = await api.updateItem(item.id, {
-        url,
-        title: title.trim() || undefined,
-        price: price ? Math.round(Number(price) * 100) : null,
+        ...(urlChanged ? { url: nextUrl } : {}),
+        ...(nextTitle && nextTitle !== item.title ? { title: nextTitle } : {}),
+        ...(nextPrice !== item.price ? { price: nextPrice } : {}),
+        ...(priority !== item.priority ? { priority } : {}),
+        ...(selfPurchased !== item.selfPurchased ? { selfPurchased } : {}),
+        ...(selfPurchased && phone !== (savedPhone ?? "") ? { sbpPhone: phone } : {}),
         ...(n !== item.maxContributors ? { maxContributors: n } : {}),
         ...(fund !== (item.fundraiserUrl ?? "") ? { fundraiserUrl: fund || null } : {}),
+        ...(urlChanged && refreshPreview ? { refreshPreview: true } : {}),
       });
       onSaved(updated);
     } catch (err) {
@@ -76,35 +154,110 @@ export function EditItemForm({ item, onSaved }: { item: Item; onSaved: (item: It
     <>
       <div style={{ padding: "4px 20px 20px", display: "flex", flexDirection: "column", gap: 20 }}>
         <Field label="Ссылка на товар" value={url} onChange={setUrl} placeholder="https://ozon.ru/product/..." type="url" />
-        <Field label="Название" value={title} onChange={setTitle} placeholder="Например: наушники Sony" />
-        <Field label="Цена, ₽ (необязательно)" value={price} onChange={setPrice} placeholder="6990" type="number" min="0" />
-        {contributorsLocked ? (
-          item.maxContributors > 1 && (
-            <div style={{ fontSize: 12.5, color: "var(--text-secondary)" }}>
-              Подарок уже куплен - число участников ({item.maxContributors}) больше не меняется.
-            </div>
-          )
-        ) : (
-          <Field
-            label={`Сколько человек может скинуться (1-${MAX_CONTRIBUTORS_CAP}, 1 - без складчины)`}
-            value={maxContributors}
-            onChange={setMaxContributors}
-            type="number"
-            min="1"
+        {urlChanged && (
+          <ToggleRow
+            checked={refreshPreview}
+            onChange={setRefreshPreview}
+            title="Обновить фото по новой ссылке"
+            hint="Подтянем фото из магазина, как при добавлении. Название тоже обновится, если вы его не меняли."
           />
         )}
-        {!item.selfPurchased && Number(contributorsLocked ? item.maxContributors : maxContributors) > 1 && (
-          <Field label="Ссылка на сбор в банке" value={fundraiserUrl} onChange={setFundraiserUrl} placeholder="https://..." type="url" />
-        )}
-        {!contributorsLocked && item.contributorsCount > 0 && item.maxContributors > 1 && (
-          <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: -10 }}>
-            Уже участвуют {item.contributorsCount} - меньше мест поставить нельзя.
+        <Field label="Название" value={title} onChange={setTitle} placeholder="Например: наушники Sony" />
+        <Field label="Цена, ₽ (необязательно)" value={price} onChange={setPrice} placeholder="6990" type="number" min="0" />
+
+        <ToggleRow
+          checked={priority}
+          onChange={setPriority}
+          title="Хочу больше всего"
+          hint="Позиция будет наверху списка со звёздочкой - друзья увидят её первой"
+        />
+
+        {modeLocked && (
+          <div style={{ ...note, padding: "10px 12px", borderRadius: 12, background: "var(--accent-soft)" }}>
+            {bought
+              ? "Подарок уже куплен - менять можно только ссылку, название, цену, фото и приоритет."
+              : item.maxContributors > 1
+                ? "Уже есть участники - способ подарить («уже купил сам», складчина) не меняется, чтобы не подвести дарителей. Ссылку на сбор и число мест менять можно."
+                : "Подарок уже забронирован - способ подарить («уже купил сам», складчина) не меняется, чтобы не подвести дарителя."}
           </div>
+        )}
+
+        <ToggleRow
+          checked={selfPurchased}
+          onChange={setSelfPurchased}
+          disabled={modeLocked}
+          title="Уже купил(а) этот подарок сам(а)"
+          hint="Друг увидит, что покупать не нужно, и просто переведёт вам деньги по номеру телефона"
+        />
+
+        {selfPurchased && (
+          <>
+            <Field
+              label="Номер телефона для перевода по СБП"
+              value={sbpPhone}
+              onChange={setSbpPhone}
+              placeholder="+7 900 123-45-67"
+              type="tel"
+            />
+            {savedPhone && sbpPhone.trim() !== savedPhone && (
+              <div style={{ ...note, marginTop: -10 }}>
+                Новый номер заменит прежний во всех ваших подарках «уже купил сам».
+              </div>
+            )}
+          </>
+        )}
+
+        <ToggleRow
+          checked={split}
+          onChange={(v) => {
+            setSplit(v);
+            // QB4-3: без складчины ссылка на сбор не нужна.
+            if (!v) setFundraiserUrl("");
+          }}
+          disabled={modeLocked}
+          title="Можно скинуться нескольким"
+          hint={
+            selfPurchased
+              ? "Каждый переведёт свою часть по тому же номеру и отметит перевод отдельно"
+              : "Друзья скинутся через сбор в вашем банке, каждый отметит своё участие"
+          }
+        />
+
+        {/* У купленной режим не меняется - общей подсказки выше достаточно. */}
+        {split && !selfPurchased && !bought && (
+          <>
+            <Field label="Ссылка на сбор в банке" value={fundraiserUrl} onChange={setFundraiserUrl} placeholder="https://..." type="url" />
+            <div style={{ ...note, marginTop: -10 }}>
+              Создайте сбор в приложении своего банка и вставьте ссылку на него. Ссылку увидят только те, кто присоединится.
+            </div>
+          </>
+        )}
+
+        {split && !bought && (
+          <>
+            <Field
+              label={`Сколько человек может скинуться (2-${MAX_CONTRIBUTORS_CAP})`}
+              value={maxContributors}
+              onChange={setMaxContributors}
+              type="number"
+              min="2"
+            />
+            {item.maxContributors > 1 && item.contributorsCount > 0 && (
+              <div style={{ ...note, marginTop: -10 }}>
+                Уже участвуют {item.contributorsCount} - меньше мест поставить нельзя.
+              </div>
+            )}
+          </>
         )}
       </div>
       <div style={{ padding: "0 20px 20px", display: "flex", flexDirection: "column", gap: 12 }}>
         {/* QB4-2: ошибка - рядом с кнопкой, а не вверху шторки. */}
         {error && <ErrorBanner {...error} screen="edit_item" revealParent />}
+        {saving && urlChanged && refreshPreview && (
+          <div style={{ fontSize: 12, color: "var(--text-secondary)", textAlign: "center" }}>
+            Подтягиваем фото из магазина - это может занять до 30 секунд
+          </div>
+        )}
         <PrimaryButton onClick={submit} disabled={!url || saving} style={{ width: "100%" }}>
           {saving ? "Сохраняем…" : "Сохранить"}
         </PrimaryButton>
