@@ -105,8 +105,11 @@ export function serializeItemView(
     sbpPhone: item.selfPurchased && reservedByMe ? ownerSbpPhone : null,
     // Сбор по ссылке банка (ТЗ блок 4): что сбор есть, видят все; саму
     // ссылку - только участники и владелец, по той же логике, что номер СБП.
-    hasFundraiser: Boolean(item.fundraiserUrl),
-    fundraiserUrl: item.fundraiserUrl && (reservedByMe || isOwnerViewer) ? item.fundraiserUrl : null,
+    // QB4-3: сбор - только у складчины; старые позиции со ссылкой и
+    // maxContributors 1 почистила миграция, здесь - страховка.
+    hasFundraiser: item.maxContributors > 1 && Boolean(item.fundraiserUrl),
+    fundraiserUrl:
+      item.maxContributors > 1 && item.fundraiserUrl && (reservedByMe || isOwnerViewer) ? item.fundraiserUrl : null,
     reservedByMe,
     priority: item.priority,
     store: detectStore(item.url),

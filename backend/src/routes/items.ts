@@ -95,7 +95,14 @@ export async function itemRoutes(app: FastifyInstance) {
     const isOwnerViewer = Boolean(telegramId && wishlist.owner.telegramId === BigInt(telegramId));
     const viewer = telegramId ? await db.user.findUnique({ where: { telegramId: BigInt(telegramId) } }) : null;
 
-    return serializeItemView(item, item.giftShares, wishlist.owner.sbpPhone, viewer?.id ?? null, isOwnerViewer);
+    // QA блока 4, QB4-1: slug вишлиста позиции - "Назад" с экрана подарка
+    // ведёт дарителя обратно в этот вишлист (в т.ч. при заходе по прямой
+    // ссылке без истории), а не на "/". Slug и так публичный - по нему
+    // даритель сюда и пришёл.
+    return {
+      ...serializeItemView(item, item.giftShares, wishlist.owner.sbpPhone, viewer?.id ?? null, isOwnerViewer),
+      wishlistSlug: wishlist.slug,
+    };
   });
 
   app.post("/api/items/:itemId/reserve", async (req, reply) => {
@@ -248,7 +255,9 @@ export async function itemRoutes(app: FastifyInstance) {
     // купленной (бронь всегда чужая, см. cannot_reserve_own_item выше) -
     // значит уведомляемый владелец и дёргающий этот роут всегда разные
     // люди, отдельная проверка не нужна.
-    await notifyOwnerPurchased(app, item.wishlistId, item.id, item.selfPurchased || Boolean(item.fundraiserUrl));
+    // Сбор по ссылке бывает только у складчины (QB4-3) - здесь, в
+    // classic-пути, благодарность есть только у "уже купил сам".
+    await notifyOwnerPurchased(app, item.wishlistId, item.id, item.selfPurchased);
 
     return { status: "bought" };
   });
@@ -318,9 +327,18 @@ export async function itemRoutes(app: FastifyInstance) {
     const current = await resolveItem(itemId);
     const joined = current.maxContributors > 1 ? current.giftShares.length : 0;
     const nextMax = body.maxContributors ?? current.maxContributors;
-    const nextFundraiser = body.fundraiserUrl !== undefined ? body.fundraiserUrl : current.fundraiserUrl;
+    // QA блока 4, QB4-3: без складчины ссылка на сбор не нужна - при
+    // maxContributors 1 (в т.ч. выключение складчины) обнуляем её.
+    const nextFundraiser =
+      nextMax > 1 ? (body.fundraiserUrl !== undefined ? body.fundraiserUrl : current.fundraiserUrl) : null;
 
     if (nextMax !== current.maxContributors) {
+      // QA блока 4, QB4-4: собранная (bought) складчина закрыта - новые
+      // места всё равно не открылись бы, а карточка показывала бы
+      // "участвуют 3 из 10" при статусе "Куплено".
+      if (current.status === "bought") {
+        return reply.code(409).send({ error: "item_already_bought" });
+      }
       if (nextMax > 1 && !current.selfPurchased && !nextFundraiser) {
         return reply.code(400).send({ error: "split_needs_payment_target" });
       }
@@ -347,7 +365,7 @@ export async function itemRoutes(app: FastifyInstance) {
         price: body.price,
         url: body.url,
         maxContributors: body.maxContributors,
-        fundraiserUrl: body.fundraiserUrl,
+        fundraiserUrl: nextFundraiser !== current.fundraiserUrl ? nextFundraiser : undefined,
       },
     });
 
@@ -355,7 +373,7 @@ export async function itemRoutes(app: FastifyInstance) {
       (k) => body[k] !== undefined,
     );
     track("item_edited", { userId: owned.wishlist.ownerId, wishlistId: owned.wishlistId, itemId, props: { fields: [...changed] } });
-    if (nextMax !== current.maxContributors || (body.fundraiserUrl !== undefined && body.fundraiserUrl !== current.fundraiserUrl)) {
+    if (nextMax !== current.maxContributors || nextFundraiser !== current.fundraiserUrl) {
       track("split_settings_changed", {
         userId: owned.wishlist.ownerId,
         wishlistId: owned.wishlistId,

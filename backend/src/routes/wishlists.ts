@@ -355,7 +355,15 @@ export async function wishlistRoutes(app: FastifyInstance) {
       body.price,
       body.selfPurchased,
       body.maxContributors,
-      { source: "app", ownerUserId: wishlist.ownerId, fundraiserUrl: body.fundraiserUrl },
+      // QA блока 4, QB4-3: ссылка на сбор живёт только вместе со
+      // складчиной - у обычной позиции её некому использовать (экран
+      // подарка показывает бронь и магазин), а список рисовал "Сбор по
+      // ссылке банка". Молча отбрасываем, как и при выключении складчины.
+      {
+        source: "app",
+        ownerUserId: wishlist.ownerId,
+        fundraiserUrl: (body.maxContributors ?? 1) > 1 ? body.fundraiserUrl : undefined,
+      },
     );
     // Новая позиция никогда не забронирована в момент создания.
     return reply.code(201).send(serializeItemView({ ...item, reservedBy: null }, [], sbpPhone ?? null, null, true));
