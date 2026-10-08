@@ -386,6 +386,7 @@ export function MyWishlist() {
       <BottomSheet open={Boolean(editingItem)} onClose={() => setEditingItem(null)} title="Редактировать позицию">
         {editingItem && (
           <EditItemForm
+            key={editingItem.id}
             item={editingItem}
             onSaved={(updated) => {
               setWishlist((w) =>
