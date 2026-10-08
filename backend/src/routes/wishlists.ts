@@ -5,6 +5,10 @@ import { z } from "zod";
 import { db } from "../db.js";
 import { resolveItem, serializeItemView } from "../services/itemView.js";
 import { createItemFromUrl } from "../services/itemCreate.js";
+import { EMPTY_ITEM, planItemEdit } from "../services/itemEdit.js";
+import { itemDeletedText } from "../services/giverMessages.js";
+import { miniAppUrl, sendToUser } from "../bot/notify.js";
+import { InlineKeyboard } from "grammy";
 import { resolveTelegramId } from "../auth/telegramAuth.js";
 import { upsertUserByTelegramId } from "../services/userUpsert.js";
 import { buildIcsCalendar, toCalendarDay } from "../services/ics.js";
@@ -25,6 +29,9 @@ function requireTelegramId(req: FastifyRequest, bodyTelegramId: string | undefin
 // нигде в ответах (см. services/itemView.ts serializeItemView).
 
 export const PHONE_RE = /^[\d\s()+-]{10,20}$/;
+// Аудит 2026-10-08, А-5: банк получателя для СБП - свободный текст
+// ("Т-Банк", "Сбербанк"), дарителю нужен, чтобы выбрать банк в переводе.
+export const BANK_RE = /^\S.{0,39}$/s;
 // ТЗ блок 4: складчина до 100 участников (раньше 10).
 export const MAX_CONTRIBUTORS_CAP = 100;
 // "Сделай 3 и названия для них" (CLAUDE.md, 2026-10-02) - продуктовый
@@ -47,7 +54,14 @@ export async function wishlistRoutes(app: FastifyInstance) {
     // POST /api/wishlists при первом открытии мини-аппа (см. Home.tsx),
     // раньше, чем мог бы отрендериться что-либо, что вызывает /api/me.
     const user = await db.user.findUnique({ where: { telegramId: BigInt(telegramId) } });
-    return { sbpPhone: user?.sbpPhone ?? null, calendarToken: user?.calendarToken ?? null };
+    // А-5: реквизиты по умолчанию для денежных подарков (форма их
+    // подставляет). Только сам пользователь - по проверенной подписи.
+    return {
+      sbpPhone: user?.sbpPhone ?? null,
+      sbpBank: user?.sbpBank ?? null,
+      fundraiserUrl: user?.fundraiserUrl ?? null,
+      calendarToken: user?.calendarToken ?? null,
+    };
   });
 
   // До 3 вишлистов на человека (CLAUDE.md, 2026-10-02) - в отличие от
@@ -176,7 +190,7 @@ export async function wishlistRoutes(app: FastifyInstance) {
       occasionTitle: wishlist.occasionTitle,
       occasionDate: wishlist.occasionDate,
       items: items.map((i) =>
-        serializeItemView(i, i.giftShares, wishlist.owner.sbpPhone, viewer?.id ?? null, isOwner),
+        serializeItemView(i, i.giftShares, viewer?.id ?? null, isOwner),
       ),
     };
   });
@@ -301,26 +315,22 @@ export async function wishlistRoutes(app: FastifyInstance) {
         url: z.preprocess(preprocessUrlInput, z.string().url().regex(/^https?:\/\//i, "invalid_url_scheme")),
         title: z.string().optional(),
         price: z.number().int().positive().optional(), // копейки
-        // "Уже купил(а) сам(а)" (решение 2026-10-02, по просьбе
-        // пользователя) - даритель переводит деньги напрямую получателю по
-        // СБП вместо похода в магазин, см. User.sbpPhone.
+        // "Уже купил(а) сам(а)" - с аудита 2026-10-08 (А-5) только
+        // информация "в магазин идти не нужно"; деньги - payoutMethod.
         selfPurchased: z.boolean().optional(),
-        sbpPhone: z.string().regex(PHONE_RE, "invalid_phone").optional(),
-        // "Скинуться на подарок" (CLAUDE.md, 2026-10-02) - получатель
-        // задаёт, сколько дарителей могут разделить этот перевод. Имеет
-        // смысл только вместе с selfPurchased - проверяется ниже.
+        // "Скинуться на подарок" (CLAUDE.md, 2026-10-02; до 100 - ТЗ блок 4)
+        // - сколько дарителей делят подарок. Нужен денежный способ.
         maxContributors: z.number().int().min(1).max(MAX_CONTRIBUTORS_CAP).optional(),
-        // Сбор по ссылке банка (ТЗ блок 4) - для ещё не купленного
-        // дорогого подарка. Та же защита схемы, что и у ссылки на товар (Б-8).
+        // А-5: способ получить деньги на этот подарок (нет - покупка в
+        // магазине) и реквизиты; пустые реквизиты берутся из профиля.
+        payoutMethod: z.enum(["sbp", "fundraiser"]).nullable().optional(),
+        sbpPhone: z.string().regex(PHONE_RE, "invalid_phone").optional(),
+        sbpBank: z.string().regex(BANK_RE, "invalid_bank").optional(),
+        // Сбор по ссылке банка (ТЗ блок 4). Та же защита схемы, что и у
+        // ссылки на товар (Б-8).
         fundraiserUrl: z.preprocess(preprocessUrlInput, z.string().url().regex(/^https?:\/\//i, "invalid_url_scheme")).optional(),
       })
       .parse(req.body);
-
-    // Складчина - только если есть куда переводить: номер СБП ("уже купил
-    // сам") или ссылка на сбор в банке.
-    if (body.maxContributors && body.maxContributors > 1 && !body.selfPurchased && !body.fundraiserUrl) {
-      return reply.code(400).send({ error: "validation_error" });
-    }
 
     const telegramId = requireTelegramId(req, body.telegramId);
     if (!telegramId) return reply.code(401).send({ error: "unauthorized" });
@@ -335,45 +345,43 @@ export async function wishlistRoutes(app: FastifyInstance) {
       return reply.code(403).send({ error: "not_your_wishlist" });
     }
 
-    // Номер нужен один раз - дальше переиспользуется для всех
-    // самостоятельных покупок этого же получателя (см. комментарий у
-    // User.sbpPhone в schema.prisma), поэтому новый присланный номер и
-    // просто "уже сохранённый" номер - равноценные источники.
-    let sbpPhone: string | undefined;
-    if (body.selfPurchased) {
-      sbpPhone = body.sbpPhone ?? wishlist.owner.sbpPhone ?? undefined;
-      if (!sbpPhone) {
-        return reply.code(400).send({ error: "sbp_phone_required" });
-      }
-      if (body.sbpPhone && body.sbpPhone !== wishlist.owner.sbpPhone) {
-        await db.user.update({ where: { id: wishlist.ownerId }, data: { sbpPhone: body.sbpPhone } });
-      }
+    // А-5: те же правила, что при правке (создание = правка пустого
+    // подарка) - services/itemEdit.ts.
+    const owner = wishlist.owner;
+    const plan = planItemEdit(
+      EMPTY_ITEM,
+      {
+        selfPurchased: body.selfPurchased,
+        maxContributors: body.maxContributors,
+        payoutMethod: body.payoutMethod,
+        sbpPhone: body.sbpPhone,
+        sbpBank: body.sbpBank,
+        fundraiserUrl: body.fundraiserUrl,
+      },
+      { sbpPhone: owner.sbpPhone, sbpBank: owner.sbpBank, fundraiserUrl: owner.fundraiserUrl },
+    );
+    if (!plan.ok) return reply.code(plan.code).send({ error: plan.error });
+    if (Object.keys(plan.profileUpdate).length > 0) {
+      await db.user.update({ where: { id: owner.id }, data: plan.profileUpdate });
     }
 
     // Автоподгрузка фото/названия по ссылке (решение 2026-10-02) -
     // services/itemCreate.ts, переиспользуется ботом (пересылка ссылки в
     // чат, см. bot/bot.ts).
-    const item = await createItemFromUrl(
-      wishlist.id,
-      body.url,
-      body.title,
-      body.price,
-      body.selfPurchased,
-      body.maxContributors,
-      // QA блока 4, QB4-3: ссылка на сбор живёт только вместе со
-      // складчиной - у обычной позиции её некому использовать (экран
-      // подарка показывает бронь и магазин), а список рисовал "Сбор по
-      // ссылке банка". Молча отбрасываем, как и при выключении складчины.
-      {
-        source: "app",
-        ownerUserId: wishlist.ownerId,
-        // Ссылка на сбор и "уже купил сам" взаимоисключающие: деньги идут
-        // либо на номер СБП, либо в сбор (ТЗ редактирования всех полей).
-        fundraiserUrl: (body.maxContributors ?? 1) > 1 && !body.selfPurchased ? body.fundraiserUrl : undefined,
-      },
-    );
+    const item = await createItemFromUrl(wishlist.id, body.url, {
+      title: body.title,
+      price: body.price,
+      selfPurchased: plan.selfPurchased,
+      maxContributors: plan.maxContributors,
+      payoutMethod: plan.payoutMethod,
+      sbpPhone: plan.sbpPhone,
+      sbpBank: plan.sbpBank,
+      fundraiserUrl: plan.fundraiserUrl,
+      source: "app",
+      ownerUserId: wishlist.ownerId,
+    });
     // Новая позиция никогда не забронирована в момент создания.
-    return reply.code(201).send(serializeItemView({ ...item, reservedBy: null }, [], sbpPhone ?? null, null, true));
+    return reply.code(201).send(serializeItemView({ ...item, reservedBy: null }, [], null, true));
   });
 
   app.delete("/api/items/:itemId", async (req, reply) => {
@@ -393,13 +401,49 @@ export async function wishlistRoutes(app: FastifyInstance) {
       return reply.code(403).send({ error: "not_your_wishlist" });
     }
 
-    const contributors = await db.giftShare.count({ where: { itemId } });
+    // Аудит 2026-10-08, А-13: удалять подарок с дарителями можно (фронт
+    // предупреждает числом участников), но каждому дарителю некупленного
+    // подарка бот сообщает об удалении - отдельно, без упоминания других
+    // дарителей. Купленный подарок - уже подарен, дарителям не пишем.
+    const shares = await db.giftShare.findMany({ where: { itemId }, include: { user: true } });
+    const reservedBy =
+      item.maxContributors <= 1 && item.status === "reserved" && item.reservedByUserId
+        ? await db.user.findUnique({ where: { id: item.reservedByUserId } })
+        : null;
+    const toNotify: { userId: string; telegramId: bigint; paid: boolean }[] =
+      item.status === "bought"
+        ? []
+        : item.maxContributors > 1
+          ? shares.map((sh) => ({ userId: sh.userId, telegramId: sh.user.telegramId, paid: sh.paid }))
+          : reservedBy
+            ? [{ userId: reservedBy.id, telegramId: reservedBy.telegramId, paid: false }]
+            : [];
+
     await db.item.delete({ where: { id: itemId } });
+
+    const ctx = { itemTitle: item.title, wishlistTitle: item.wishlist.title, ownerName: item.wishlist.owner.firstName };
+    const keyboard = new InlineKeyboard().webApp("Открыть список", miniAppUrl(`/w/${item.wishlist.slug}`));
+    let notified = 0;
+    for (const g of toNotify) {
+      const delivered = await sendToUser(
+        g.telegramId,
+        itemDeletedText({ ...ctx, split: item.maxContributors > 1, paidByGiver: g.paid }),
+        keyboard,
+        `item_deleted item=${itemId}`,
+      );
+      if (delivered) notified++;
+      track("giver_notified", { userId: g.userId, wishlistId: item.wishlistId, itemId, props: { reason: "item_deleted", delivered } });
+    }
     track("item_deleted", {
       userId: item.wishlist.ownerId,
       wishlistId: item.wishlistId,
       itemId,
-      props: { status: item.status, mode: item.maxContributors > 1 ? "split" : "classic", contributors },
+      props: {
+        status: item.status,
+        mode: item.maxContributors > 1 ? "split" : "classic",
+        contributors: item.maxContributors > 1 ? shares.length : reservedBy ? 1 : 0,
+        notified,
+      },
     });
     return reply.code(204).send();
   });

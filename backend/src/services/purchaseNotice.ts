@@ -8,7 +8,7 @@
 
 const MAX_TITLE = 80;
 
-function quote(text: string): string {
+export function quote(text: string): string {
   const t = text.replace(/\s+/g, " ").trim();
   return `«${t.length > MAX_TITLE ? t.slice(0, MAX_TITLE - 1).trimEnd() + "…" : t}»`;
 }
@@ -16,8 +16,8 @@ function quote(text: string): string {
 export interface PurchaseNoticeInput {
   itemTitle: string | null;
   wishlistTitle: string;
-  selfPurchased: boolean;
-  fundraiser: boolean;
+  // А-5: текст зависит от способа получить деньги, а не от "уже купил сам".
+  payoutMethod: "sbp" | "fundraiser" | null;
   split: boolean;
 }
 
@@ -25,10 +25,12 @@ export function purchaseNoticeText(i: PurchaseNoticeInput): string {
   const gift = i.itemTitle?.trim() ? quote(i.itemTitle) : "без названия";
   const giftPart = i.itemTitle?.trim() ? `за ${gift}` : "за подарок без названия";
   const list = `из списка ${quote(i.wishlistTitle)}`;
-  if (i.fundraiser) {
-    return `💸 Все участники скинулись ${giftPart} ${list} через сбор в банке - проверьте сбор в приложении банка.`;
+  if (i.payoutMethod === "fundraiser") {
+    return i.split
+      ? `💸 Все участники скинулись ${giftPart} ${list} через сбор в банке - проверьте сбор в приложении банка.`
+      : `💸 Вам перевели деньги ${giftPart} ${list} через сбор в банке - проверьте сбор в приложении банка.`;
   }
-  if (i.selfPurchased) {
+  if (i.payoutMethod === "sbp") {
     return i.split
       ? `💸 Все участники складчины перевели деньги ${giftPart} ${list} - проверьте поступления в банке.`
       : `💸 Вам перевели деньги ${giftPart} ${list} - проверьте поступление в банке.`;

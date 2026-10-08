@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { purchaseNoticeText } from "./purchaseNotice.js";
 
-const base = { wishlistTitle: "Мой вишлист", selfPurchased: false, fundraiser: false, split: false };
+const base = { wishlistTitle: "Мой вишлист", payoutMethod: null, split: false } as const;
 
 test("покупка в магазине: название подарка и списка", () => {
   assert.equal(
@@ -11,15 +11,16 @@ test("покупка в магазине: название подарка и с�
   );
 });
 
-test("уже купил сам: текст о переводе, а не о покупке", () => {
-  const t = purchaseNoticeText({ ...base, itemTitle: "Мышка", selfPurchased: true });
+test("СБП: текст о переводе, а не о покупке", () => {
+  const t = purchaseNoticeText({ ...base, itemTitle: "Мышка", payoutMethod: "sbp" });
   assert.match(t, /перевели деньги за «Мышка»/);
   assert.doesNotMatch(t, /купленн/);
 });
 
 test("складчина и сбор по ссылке", () => {
-  assert.match(purchaseNoticeText({ ...base, itemTitle: "Велосипед", selfPurchased: true, split: true }), /складчины перевели деньги за «Велосипед»/);
-  assert.match(purchaseNoticeText({ ...base, itemTitle: "Велосипед", fundraiser: true, split: true }), /скинулись за «Велосипед».*сбор/);
+  assert.match(purchaseNoticeText({ ...base, itemTitle: "Велосипед", payoutMethod: "sbp", split: true }), /складчины перевели деньги за «Велосипед»/);
+  assert.match(purchaseNoticeText({ ...base, itemTitle: "Велосипед", payoutMethod: "fundraiser", split: true }), /скинулись за «Велосипед».*сбор/);
+  assert.match(purchaseNoticeText({ ...base, itemTitle: "Велосипед", payoutMethod: "fundraiser" }), /перевели деньги за «Велосипед».*через сбор/);
 });
 
 test("длинное название обрезается, без названия - понятный текст", () => {

@@ -107,10 +107,7 @@ bot.callbackQuery(["addlink:yes", "addlink:no"], async (ctx) => {
 
   try {
     const wishlist = await getOrCreateWishlist(String(ctx.from.id));
-    const item = await createItemFromUrl(wishlist.id, url, undefined, undefined, undefined, undefined, {
-      source: "bot",
-      ownerUserId: wishlist.ownerId,
-    });
+    const item = await createItemFromUrl(wishlist.id, url, { source: "bot", ownerUserId: wishlist.ownerId });
     await ctx.editMessageText(`Добавлено в вишлист: ${item.title}`);
   } catch (err) {
     console.error("[bot] Не удалось добавить ссылку", err);

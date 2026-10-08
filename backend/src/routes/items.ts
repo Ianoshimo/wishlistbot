@@ -7,25 +7,32 @@ import { reservationDeadline, resolveExpiredReservation } from "../services/rese
 import { resolveItem, serializeItemView } from "../services/itemView.js";
 import { resolveTelegramId, resolveTelegramUser, telegramIdSchema } from "../auth/telegramAuth.js";
 import { upsertUserByTelegramId } from "../services/userUpsert.js";
-import { bot } from "../bot/bot.js";
-import { monthDay, track, type ReserveMode } from "../services/analytics.js";
+import { monthDay, payoutProp, track, type ReserveMode } from "../services/analytics.js";
 import { detectStore } from "../services/linkPreview.js";
-import { MAX_CONTRIBUTORS_CAP, PHONE_RE } from "./wishlists.js";
+import { BANK_RE, MAX_CONTRIBUTORS_CAP, PHONE_RE } from "./wishlists.js";
 import { planItemEdit } from "../services/itemEdit.js";
+import { miniAppUrl, sendToUser } from "../bot/notify.js";
+import { giftCompletedText, giverThanksText, shareThanksText } from "../services/giverMessages.js";
 import { fetchPreviewWithFallback } from "../services/itemCreate.js";
 import { purchaseNoticeText } from "../services/purchaseNotice.js";
-import { env } from "../env.js";
 
 // Аналитика: "позиция стала bought" - с датой повода вишлиста (месяц-день),
 // чтобы покупку можно было привязать к событию. Повод дочитывается
 // отдельно и не ждётся - сбой не влияет на ответ.
 function trackItemBought(
-  item: { id: string; wishlistId: string; url: string; price: number | null; selfPurchased: boolean },
+  item: { id: string; wishlistId: string; url: string; price: number | null; selfPurchased: boolean; payoutMethod: string | null },
   mode: ReserveMode,
   contributors: number,
   userId: string,
 ) {
-  const base = { mode, selfPurchased: item.selfPurchased, store: detectStore(item.url), price: item.price, contributors };
+  const base = {
+    mode,
+    selfPurchased: item.selfPurchased,
+    payoutMethod: payoutProp(item.payoutMethod),
+    store: detectStore(item.url),
+    price: item.price,
+    contributors,
+  };
   db.wishlist
     .findUnique({ where: { id: item.wishlistId }, select: { occasionDate: true } })
     .then((w) => w?.occasionDate ?? null, () => null)
@@ -55,10 +62,9 @@ function requireTelegramId(req: FastifyRequest, bodyTelegramId: string | undefin
 // уведомлением только для selfPurchased: получатель жмёт её, бот сам
 // резолвит дарителя(ей) этой позиции (см. bot/bot.ts, bot.callbackQuery
 // "thank:") и пересылает фото/видео напрямую, получатель не видит кому.
-// thanksAvailable - подарок деньгами: "уже купил сам" (СБП) или сбор по
-// ссылке банка (ТЗ блок 4) - в обоих случаях есть конкретные дарители,
-// которым можно переслать благодарность.
-async function notifyOwnerPurchased(app: FastifyInstance, wishlistId: string, itemId: string, thanksAvailable: boolean) {
+// Кнопка "Поблагодарить" - у подарка деньгами (А-5: способ СБП или сбор):
+// там есть конкретные дарители, которым можно переслать благодарность.
+async function notifyOwnerPurchased(app: FastifyInstance, wishlistId: string, itemId: string) {
   try {
     // Аудит 2026-10-08, А-12: название подарка и списка в тексте, разный
     // текст для покупки и перевода денег (services/purchaseNotice.ts),
@@ -67,8 +73,7 @@ async function notifyOwnerPurchased(app: FastifyInstance, wishlistId: string, it
       where: { id: itemId },
       select: {
         title: true,
-        selfPurchased: true,
-        fundraiserUrl: true,
+        payoutMethod: true,
         maxContributors: true,
         wishlist: { select: { id: true, slug: true, title: true, owner: { select: { telegramId: true } } } },
       },
@@ -77,16 +82,63 @@ async function notifyOwnerPurchased(app: FastifyInstance, wishlistId: string, it
     const text = purchaseNoticeText({
       itemTitle: item.title,
       wishlistTitle: item.wishlist.title,
-      selfPurchased: item.selfPurchased,
-      fundraiser: Boolean(item.fundraiserUrl),
+      payoutMethod: item.payoutMethod,
       split: item.maxContributors > 1,
     });
     const keyboard = new InlineKeyboard();
-    if (thanksAvailable) keyboard.text("🎁 Поблагодарить дарителя", `thank:${itemId}`).row();
-    keyboard.webApp("Открыть вишлист", `${env.MINI_APP_URL.replace(/\/+$/, "")}/w/${item.wishlist.slug}`);
-    await bot.api.sendMessage(item.wishlist.owner.telegramId.toString(), text, { reply_markup: keyboard });
+    if (item.payoutMethod) keyboard.text("🎁 Поблагодарить дарителя", `thank:${itemId}`).row();
+    keyboard.webApp("Открыть вишлист", miniAppUrl(`/w/${item.wishlist.slug}`));
+    await sendToUser(item.wishlist.owner.telegramId, text, keyboard, `purchase_notice item=${itemId}`);
   } catch (err) {
     app.log.warn({ err }, "Не удалось отправить уведомление о покупке");
+  }
+}
+
+// Аудит 2026-10-08, А-14: дарителю - спасибо за отметку покупки/перевода;
+// в складчине - "ваша часть отмечена", а когда собрали все - "подарок
+// собран" каждому участнику (последнему отметившему - только это). Другие
+// дарители не называются. Сбой отправки не влияет на ответ.
+async function giftContext(itemId: string) {
+  const item = await db.item.findUnique({
+    where: { id: itemId },
+    include: { wishlist: { include: { owner: true } }, reservedBy: true, giftShares: { include: { user: true } } },
+  });
+  if (!item) return null;
+  return {
+    item,
+    ctx: { itemTitle: item.title, wishlistTitle: item.wishlist.title, ownerName: item.wishlist.owner.firstName },
+    keyboard: new InlineKeyboard().webApp("Открыть подарок", miniAppUrl(`/item/${item.id}`)),
+  };
+}
+
+async function notifyGiverMarked(itemId: string, giverUserId: string) {
+  const g = await giftContext(itemId);
+  if (!g?.item.reservedBy || g.item.reservedBy.id !== giverUserId) return;
+  const delivered = await sendToUser(
+    g.item.reservedBy.telegramId,
+    giverThanksText({ ...g.ctx, payoutMethod: g.item.payoutMethod }),
+    g.keyboard,
+    `giver_thanks item=${itemId}`,
+  );
+  track("giver_notified", { userId: giverUserId, wishlistId: g.item.wishlistId, itemId, props: { reason: "purchase_marked", delivered } });
+}
+
+async function notifyShareMarked(itemId: string, giverUserId: string, completed: boolean) {
+  const g = await giftContext(itemId);
+  if (!g) return;
+  const recipients = completed ? g.item.giftShares : g.item.giftShares.filter((s) => s.userId === giverUserId);
+  const paid = g.item.giftShares.filter((s) => s.paid).length;
+  for (const share of recipients) {
+    const text = completed
+      ? giftCompletedText(g.ctx)
+      : shareThanksText({ ...g.ctx, paid, total: g.item.maxContributors });
+    const delivered = await sendToUser(share.user.telegramId, text, g.keyboard, `giver_${completed ? "completed" : "share_thanks"} item=${itemId}`);
+    track("giver_notified", {
+      userId: share.userId,
+      wishlistId: g.item.wishlistId,
+      itemId,
+      props: { reason: completed ? "gift_completed" : "purchase_marked", delivered },
+    });
   }
 }
 
@@ -118,7 +170,7 @@ export async function itemRoutes(app: FastifyInstance) {
     // ссылке без истории), а не на "/". Slug и так публичный - по нему
     // даритель сюда и пришёл.
     return {
-      ...serializeItemView(item, item.giftShares, wishlist.owner.sbpPhone, viewer?.id ?? null, isOwnerViewer),
+      ...serializeItemView(item, item.giftShares, viewer?.id ?? null, isOwnerViewer),
       wishlistSlug: wishlist.slug,
     };
   });
@@ -177,7 +229,13 @@ export async function itemRoutes(app: FastifyInstance) {
         userId: user.id,
         wishlistId: item.wishlistId,
         itemId,
-        props: { mode: "split", revealIdentity: Boolean(body.revealIdentity), selfPurchased: item.selfPurchased, store: detectStore(item.url) },
+        props: {
+          mode: "split",
+          revealIdentity: Boolean(body.revealIdentity),
+          selfPurchased: item.selfPurchased,
+          payoutMethod: payoutProp(item.payoutMethod),
+          store: detectStore(item.url),
+        },
       });
       return { status: "reserved" };
     }
@@ -198,6 +256,8 @@ export async function itemRoutes(app: FastifyInstance) {
         // "Дарить неанонимно" (CLAUDE.md, 2026-10-02) - решение
         // фиксируется один раз, в момент брони, не меняется позже.
         reservedByVisible: Boolean(body.revealIdentity),
+        // А-14: напоминания по новой брони - с нуля.
+        lastReminderAt: null,
       },
     });
     if (result.count === 0) {
@@ -208,7 +268,13 @@ export async function itemRoutes(app: FastifyInstance) {
       userId: user.id,
       wishlistId: item.wishlistId,
       itemId,
-      props: { mode: "classic", revealIdentity: Boolean(body.revealIdentity), selfPurchased: item.selfPurchased, store: detectStore(item.url) },
+      props: {
+        mode: "classic",
+        revealIdentity: Boolean(body.revealIdentity),
+        selfPurchased: item.selfPurchased,
+        payoutMethod: payoutProp(item.payoutMethod),
+        store: detectStore(item.url),
+      },
     });
     return { status: "reserved" };
   });
@@ -239,17 +305,21 @@ export async function itemRoutes(app: FastifyInstance) {
           userId: user.id,
           wishlistId: item.wishlistId,
           itemId,
-          props: { mode: "split", selfPurchased: item.selfPurchased },
+          props: { mode: "split", selfPurchased: item.selfPurchased, payoutMethod: payoutProp(item.payoutMethod) },
         });
       }
 
       const shares = await db.giftShare.findMany({ where: { itemId } });
       const allPaid = shares.length === item.maxContributors && shares.every((s) => s.paid);
-      if (allPaid && item.status !== "bought") {
+      const completedNow = allPaid && item.status !== "bought";
+      if (completedNow) {
         await db.item.update({ where: { id: itemId }, data: { status: "bought" } });
         trackItemBought(item, "split", shares.length, user.id);
-        await notifyOwnerPurchased(app, item.wishlistId, item.id, item.selfPurchased || Boolean(item.fundraiserUrl));
+        await notifyOwnerPurchased(app, item.wishlistId, item.id);
       }
+      // А-14: спасибо дольщику (повторная отметка той же доли - без
+      // повторного сообщения).
+      if (!share.paid || completedNow) await notifyShareMarked(itemId, user.id, completedNow);
       return { status: allPaid ? "bought" : "reserved" };
     }
 
@@ -265,7 +335,7 @@ export async function itemRoutes(app: FastifyInstance) {
       userId: user.id,
       wishlistId: item.wishlistId,
       itemId,
-      props: { mode: "classic", selfPurchased: item.selfPurchased },
+      props: { mode: "classic", selfPurchased: item.selfPurchased, payoutMethod: payoutProp(item.payoutMethod) },
     });
     trackItemBought(item, "classic", 1, user.id);
 
@@ -273,9 +343,9 @@ export async function itemRoutes(app: FastifyInstance) {
     // купленной (бронь всегда чужая, см. cannot_reserve_own_item выше) -
     // значит уведомляемый владелец и дёргающий этот роут всегда разные
     // люди, отдельная проверка не нужна.
-    // Сбор по ссылке бывает только у складчины (QB4-3) - здесь, в
-    // classic-пути, благодарность есть только у "уже купил сам".
-    await notifyOwnerPurchased(app, item.wishlistId, item.id, item.selfPurchased);
+    await notifyOwnerPurchased(app, item.wishlistId, item.id);
+    // А-14: спасибо держателю брони.
+    await notifyGiverMarked(item.id, user.id);
 
     return { status: "bought" };
   });
@@ -324,13 +394,16 @@ export async function itemRoutes(app: FastifyInstance) {
         title: z.string().min(1).optional(),
         price: z.number().int().positive().nullable().optional(),
         url: z.preprocess(preprocessUrlInput, z.string().url().regex(/^https?:\/\//i, "invalid_url_scheme")).optional(),
-        // ТЗ блок 4, п.3: число участников складчины и ссылка на сбор
-        // меняются и после создания. null у ссылки - убрать её.
+        // ТЗ блок 4, п.3: число участников складчины меняется и после создания.
         maxContributors: z.number().int().min(1).max(MAX_CONTRIBUTORS_CAP).optional(),
-        fundraiserUrl: z.preprocess(preprocessUrlInput, z.string().url().regex(/^https?:\/\//i, "invalid_url_scheme")).nullable().optional(),
-        // "Уже купил(а) сам(а)" и номер СБП - как при создании.
-        selfPurchased: z.boolean().optional(),
+        // Аудит 2026-10-08, А-5: способ получить деньги (null - без денег)
+        // и реквизиты этого подарка. Правила - services/itemEdit.ts.
+        payoutMethod: z.enum(["sbp", "fundraiser"]).nullable().optional(),
+        fundraiserUrl: z.preprocess(preprocessUrlInput, z.string().url().regex(/^https?:\/\//i, "invalid_url_scheme")).optional(),
         sbpPhone: z.string().regex(PHONE_RE, "invalid_phone").optional(),
+        sbpBank: z.string().regex(BANK_RE, "invalid_bank").optional(),
+        // "Уже купил сам" - с А-5 только информация "в магазин не нужно".
+        selfPurchased: z.boolean().optional(),
         priority: z.boolean().optional(),
         // Подтянуть фото (и название, если его не меняли вручную) заново
         // по ссылке - как при создании.
@@ -354,23 +427,28 @@ export async function itemRoutes(app: FastifyInstance) {
     // участников (см. срок доли в services/reservation.ts).
     const current = await resolveItem(itemId);
     const joined = current.maxContributors > 1 ? current.giftShares.length : 0;
-    const ownerPhone = owned.wishlist.owner.sbpPhone;
+    const owner = owned.wishlist.owner;
     const plan = planItemEdit(
       {
         status: current.status,
         selfPurchased: current.selfPurchased,
         maxContributors: current.maxContributors,
-        fundraiserUrl: current.fundraiserUrl,
         reservedByUserId: current.reservedByUserId,
         joined,
+        payoutMethod: current.payoutMethod,
+        sbpPhone: current.sbpPhone,
+        sbpBank: current.sbpBank,
+        fundraiserUrl: current.fundraiserUrl,
       },
       {
         selfPurchased: body.selfPurchased,
         maxContributors: body.maxContributors,
-        fundraiserUrl: body.fundraiserUrl,
+        payoutMethod: body.payoutMethod,
         sbpPhone: body.sbpPhone,
+        sbpBank: body.sbpBank,
+        fundraiserUrl: body.fundraiserUrl,
       },
-      ownerPhone,
+      { sbpPhone: owner.sbpPhone, sbpBank: owner.sbpBank, fundraiserUrl: owner.fundraiserUrl },
     );
     if (!plan.ok) {
       track("item_edit_blocked", {
@@ -387,10 +465,10 @@ export async function itemRoutes(app: FastifyInstance) {
       return reply.code(plan.code).send(plan.joined !== undefined ? { error: plan.error, joined: plan.joined } : { error: plan.error });
     }
 
-    // Номер СБП - реквизит владельца, а не позиции (как при создании):
-    // действует для всех его позиций "уже купил сам".
-    if (plan.phoneToSave) {
-      await db.user.update({ where: { id: owned.wishlist.ownerId }, data: { sbpPhone: plan.phoneToSave } });
+    // Последние введённые реквизиты - по умолчанию для следующих подарков
+    // (другие подарки от этого не меняются - у каждого свои реквизиты).
+    if (Object.keys(plan.profileUpdate).length > 0) {
+      await db.user.update({ where: { id: owned.wishlist.ownerId }, data: plan.profileUpdate });
     }
 
     // Фото по новой ссылке - та же подгрузка, что при создании. Не
@@ -414,7 +492,14 @@ export async function itemRoutes(app: FastifyInstance) {
         imageUrl,
         selfPurchased: plan.selfChanged ? plan.selfPurchased : undefined,
         maxContributors: plan.maxChanged ? plan.maxContributors : undefined,
-        fundraiserUrl: plan.fundraiserChanged ? plan.fundraiserUrl : undefined,
+        ...(plan.methodChanged || plan.detailsChanged
+          ? {
+              payoutMethod: plan.payoutMethod,
+              sbpPhone: plan.sbpPhone,
+              sbpBank: plan.sbpBank,
+              fundraiserUrl: plan.fundraiserUrl,
+            }
+          : {}),
       },
     });
 
@@ -423,8 +508,11 @@ export async function itemRoutes(app: FastifyInstance) {
     );
     if (plan.selfChanged) changed.push("selfPurchased");
     if (plan.maxChanged) changed.push("maxContributors");
-    if (plan.fundraiserChanged) changed.push("fundraiserUrl");
-    if (plan.phoneToSave) changed.push("sbpPhone");
+    if (plan.methodChanged) changed.push("payoutMethod");
+    // Только имена полей - значения реквизитов в аналитику не пишем.
+    if (plan.sbpPhone !== (current.sbpPhone ?? null)) changed.push("sbpPhone");
+    if (plan.sbpBank !== (current.sbpBank ?? null)) changed.push("sbpBank");
+    if (plan.fundraiserUrl !== (current.fundraiserUrl ?? null)) changed.push("fundraiserUrl");
     if (body.refreshPreview) changed.push("imageUrl");
     track("item_edited", {
       userId: owned.wishlist.ownerId,
@@ -435,16 +523,17 @@ export async function itemRoutes(app: FastifyInstance) {
         status: current.status,
         mode: plan.maxContributors > 1 ? "split" : "classic",
         selfPurchased: plan.selfPurchased,
+        payoutMethod: payoutProp(plan.payoutMethod),
         contributors: current.maxContributors > 1 ? joined : current.reservedByUserId ? 1 : 0,
         previewRefreshed: Boolean(body.refreshPreview),
       },
     });
-    if (plan.maxChanged || plan.fundraiserChanged) {
+    if (plan.maxChanged || (plan.payoutMethod === "fundraiser" && plan.detailsChanged)) {
       track("split_settings_changed", {
         userId: owned.wishlist.ownerId,
         wishlistId: owned.wishlistId,
         itemId,
-        props: { from: current.maxContributors, to: plan.maxContributors, fundraiser: Boolean(plan.fundraiserUrl) },
+        props: { from: current.maxContributors, to: plan.maxContributors, fundraiser: plan.payoutMethod === "fundraiser" },
       });
     }
 
@@ -454,15 +543,14 @@ export async function itemRoutes(app: FastifyInstance) {
     if (nextMax > 1 && current.status !== "bought" && joined === nextMax && current.giftShares.every((s) => s.paid)) {
       await db.item.update({ where: { id: itemId }, data: { status: "bought" } });
       trackItemBought(current, "split", joined, owned.wishlist.ownerId);
-      await notifyOwnerPurchased(app, owned.wishlistId, itemId, plan.selfPurchased || Boolean(plan.fundraiserUrl));
+      await notifyOwnerPurchased(app, owned.wishlistId, itemId);
+      await notifyShareMarked(itemId, owned.wishlist.ownerId, true);
     }
 
     const updated = await resolveItem(itemId);
-    // Правит только владелец - viewerUserId null, поэтому номер СБП в
-    // ответ не попадает (hotfix Н-1: номер видит только держатель брони),
-    // а isOwnerViewer=true позволяет сразу увидеть раскрывшихся дарителей,
-    // как и на GET.
-    return serializeItemView(updated, updated.giftShares, ownerPhone, null, true);
+    // Правит только владелец (isOwnerViewer=true): ему видны реквизиты
+    // своего подарка и раскрывшиеся дарители, как и на GET.
+    return serializeItemView(updated, updated.giftShares, null, true);
   });
 
   // Удаление позиции (Беклог Б-2/Н-4) зарегистрировано в

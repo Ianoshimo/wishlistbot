@@ -21,6 +21,10 @@ const schema = z.object({
   // локальной разработке по-прежнему доверять telegramId из тела запроса.
   // В проде должен быть выключен (не задан) - см. auth/telegramAuth.ts.
   ALLOW_DEV_TELEGRAM_ID: z.coerce.boolean().default(false),
+  // Аудит 2026-10-08, А-14: как часто планировщик проверяет, кому пора
+  // напомнить о брони (сами напоминания - не чаще раза в сутки на бронь,
+  // services/reminders.ts). 0 - планировщик выключен.
+  REMINDER_TICK_MS: z.coerce.number().int().min(0).default(10 * 60 * 1000),
 });
 
 export const env = schema.parse(process.env);

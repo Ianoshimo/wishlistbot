@@ -1,7 +1,8 @@
 import { db } from "../db.js";
 import { deriveNameFromUrl, detectStore, fetchLinkPreview } from "./linkPreview.js";
 import { fetchWildberriesViaApify, isWildberriesUrl } from "./wildberriesApify.js";
-import { track, type ItemSource } from "./analytics.js";
+import { payoutProp, track, type ItemSource } from "./analytics.js";
+import type { PayoutMethod } from "./itemEdit.js";
 
 // Превью товара (фото/название) - свой парсинг, для Wildberries платный
 // фоллбэк через Apify. Общая для создания позиции и для "Обновить фото по
@@ -24,18 +25,24 @@ export async function fetchPreviewWithFallback(url: string) {
 // Создание позиции по ссылке (подгрузка фото/названия) - вынесено из
 // routes/wishlists.ts, чтобы той же логикой мог воспользоваться бот
 // (пересылка товарной ссылки прямо в чат, см. bot/bot.ts), а не только
-// HTTP-роут мини-аппа.
-export async function createItemFromUrl(
-  wishlistId: string,
-  url: string,
-  titleOverride?: string,
-  price?: number,
-  selfPurchased?: boolean,
-  maxContributors?: number,
+// HTTP-роут мини-аппа. Правила "как подарить" (А-5) проверяет вызывающий
+// (services/itemEdit.ts planItemEdit) - сюда приходит уже готовый план.
+export interface CreateItemOptions {
+  title?: string;
+  price?: number;
+  selfPurchased?: boolean;
+  maxContributors?: number;
+  payoutMethod?: PayoutMethod | null;
+  sbpPhone?: string | null;
+  sbpBank?: string | null;
+  fundraiserUrl?: string | null;
   // Аналитика (2026-10-07): откуда добавлена позиция и кто владелец -
   // событие item_added пишется здесь, в одном месте для мини-аппа и бота.
-  meta?: { source: ItemSource; ownerUserId: string; fundraiserUrl?: string },
-) {
+  source: ItemSource;
+  ownerUserId: string;
+}
+
+export async function createItemFromUrl(wishlistId: string, url: string, opts: CreateItemOptions) {
   const preview = await fetchPreviewWithFallback(url);
   const isDirectImage = preview.imageUrl === url;
 
@@ -43,12 +50,15 @@ export async function createItemFromUrl(
     data: {
       wishlistId,
       url,
-      price,
-      selfPurchased: selfPurchased ?? false,
-      maxContributors: maxContributors ?? 1,
-      fundraiserUrl: meta?.fundraiserUrl,
+      price: opts.price,
+      selfPurchased: opts.selfPurchased ?? false,
+      maxContributors: opts.maxContributors ?? 1,
+      payoutMethod: opts.payoutMethod ?? null,
+      sbpPhone: opts.sbpPhone ?? null,
+      sbpBank: opts.sbpBank ?? null,
+      fundraiserUrl: opts.fundraiserUrl ?? null,
       title:
-        titleOverride ??
+        opts.title ??
         preview.title ??
         (isDirectImage ? "Фото по ссылке" : deriveNameFromUrl(url)),
       imageUrl: preview.imageUrl ?? undefined,
@@ -56,16 +66,16 @@ export async function createItemFromUrl(
   });
 
   track("item_added", {
-    userId: meta?.ownerUserId ?? null,
+    userId: opts.ownerUserId,
     wishlistId,
     itemId: item.id,
     props: {
-      source: meta?.source ?? "app",
+      source: opts.source,
       store: detectStore(url),
       price: item.price ?? null,
       selfPurchased: item.selfPurchased,
       maxContributors: item.maxContributors,
-      fundraiser: Boolean(item.fundraiserUrl),
+      payoutMethod: payoutProp(item.payoutMethod),
     },
   });
 

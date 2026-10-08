@@ -16,6 +16,12 @@ import type { OccasionCategory } from "./occasionCategory.js";
 
 export type ItemSource = "app" | "bot";
 export type ReserveMode = "classic" | "split";
+// Аудит 2026-10-08, А-5: способ получить деньги - только вид, без
+// реквизитов (номер, банк, ссылка в аналитику не попадают).
+export type PayoutProp = "sbp" | "fundraiser" | "none";
+export function payoutProp(method: string | null | undefined): PayoutProp {
+  return method === "sbp" || method === "fundraiser" ? method : "none";
+}
 
 export interface EventProps {
   // Пользователь отправил боту /start (флоу "Первый запуск").
@@ -27,16 +33,17 @@ export interface EventProps {
     price: number | null; // копейки
     selfPurchased: boolean;
     maxContributors: number;
-    fundraiser: boolean;
+    payoutMethod: PayoutProp;
   };
   // Бронь позиции (classic) или присоединение к доле ("скинуться").
-  item_reserved: { mode: ReserveMode; revealIdentity: boolean; selfPurchased: boolean; store: string | null };
+  item_reserved: { mode: ReserveMode; revealIdentity: boolean; selfPurchased: boolean; payoutMethod: PayoutProp; store: string | null };
   // Даритель отметил "куплено" (classic) или "оплатил свою долю" (split).
-  purchase_marked: { mode: ReserveMode; selfPurchased: boolean };
+  purchase_marked: { mode: ReserveMode; selfPurchased: boolean; payoutMethod: PayoutProp };
   // Позиция окончательно перешла в bought (для split - когда оплатили все).
   item_bought: {
     mode: ReserveMode;
     selfPurchased: boolean;
+    payoutMethod: PayoutProp;
     store: string | null;
     price: number | null;
     contributors: number;
@@ -67,19 +74,27 @@ export interface EventProps {
     status: string;
     mode: ReserveMode;
     selfPurchased: boolean;
+    payoutMethod: PayoutProp;
     contributors: number;
     previewRefreshed: boolean;
   };
   // Правка режима подарка отклонена правилами (ТЗ редактирования всех
   // полей): reason - код ошибки API.
   item_edit_blocked: { reason: string; status: string; mode: ReserveMode; contributors: number };
-  item_deleted: { status: string; mode: ReserveMode; contributors: number };
+  // notified - скольким дарителям бот сообщил об удалении (А-13).
+  item_deleted: { status: string; mode: ReserveMode; contributors: number; notified: number };
   item_priority_toggled: { priority: boolean };
   wishlist_renamed: Record<string, never>;
   // Изменено число участников складчины / ссылка на сбор.
   split_settings_changed: { from: number; to: number; fundraiser: boolean };
   // Ошибка API 5xx - маршрут-шаблон, не конкретный URL с id.
   api_error: { method: string; route: string; status: number };
+  // Аудит 2026-10-08, А-14: напоминание держателю брони/доли (daysLeft -
+  // сколько целых дней до снятия), delivered - Telegram принял сообщение.
+  reminder_sent: { mode: ReserveMode; payoutMethod: PayoutProp; daysLeft: number; delivered: boolean };
+  // Сообщение дарителю от бота: спасибо за отметку (А-14), подарок собран
+  // (А-14), подарок удалён (А-13).
+  giver_notified: { reason: "purchase_marked" | "gift_completed" | "item_deleted"; delivered: boolean };
 }
 
 export type EventType = keyof EventProps;
@@ -103,6 +118,8 @@ export const EVENT_TYPES = [
   "wishlist_renamed",
   "split_settings_changed",
   "api_error",
+  "reminder_sent",
+  "giver_notified",
 ] as const satisfies readonly EventType[];
 
 // Клиентские события (POST /api/events) - строгий белый список: имя
@@ -112,7 +129,10 @@ export const CLIENT_EVENTS: Record<string, readonly string[]> = {
   app_opened: ["platform", "tgVersion", "startKind", "colorScheme", "fullscreen", "insideTelegram"],
   screen_viewed: ["screen"],
   share_link_copied: [],
-  store_link_clicked: ["store"],
+  // beforeReserve - ссылка открыта до брони (аудит 2026-10-08, А-11).
+  store_link_clicked: ["store", "beforeReserve"],
+  // А-16: "Отправить в Telegram" на экране "Поделиться".
+  share_sent: [],
   fundraiser_link_clicked: [],
   sbp_details_copied: ["field"],
   calendar_add_clicked: [],

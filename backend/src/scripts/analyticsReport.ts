@@ -181,12 +181,33 @@ async function main() {
     for (const r of opens) console.log(`    ${String(r.platform ?? "?").padEnd(12)} fullscreen=${r.fullscreen ?? "?"}   ${n(r.c)}`);
   }
 
-  section("Складчина и сборы");
-  const splits = await db.$queryRaw<{ fundraiser: string | null; c: bigint }[]>`
-    SELECT props->>'fundraiser' AS fundraiser, COUNT(*) AS c FROM "Event"
-    WHERE type = 'item_added' AND (props->>'maxContributors')::int > 1 AND "createdAt" >= ${since} GROUP BY 1`;
-  for (const r of splits) console.log(`  ${r.fundraiser === "true" ? "сбор по ссылке банка" : "перевод по СБП"}   позиций: ${n(r.c)}`);
-  if (splits.length === 0) console.log("  складчин за период нет");
+  // Аудит 2026-10-08, А-5: способ получить деньги выбирается на каждый
+  // подарок (props.payoutMethod); у событий до А-5 его нет - для них
+  // старое поле fundraiser (складчина: сбор или СБП) / selfPurchased.
+  section("Способ подарить (по добавленным позициям)");
+  const payouts = await db.$queryRaw<{ method: string; split: boolean; c: bigint }[]>`
+    SELECT COALESCE(
+        props->>'payoutMethod',
+        CASE WHEN props->>'fundraiser' = 'true' THEN 'fundraiser'
+             WHEN (props->>'selfPurchased')::boolean THEN 'sbp' ELSE 'none' END
+      ) AS method,
+      (props->>'maxContributors')::int > 1 AS split,
+      COUNT(*) AS c
+    FROM "Event" WHERE type = 'item_added' AND "createdAt" >= ${since} GROUP BY 1, 2 ORDER BY 1, 2`;
+  const methodName: Record<string, string> = { none: "в магазине", sbp: "деньгами по СБП", fundraiser: "сбор в банке" };
+  for (const r of payouts) {
+    console.log(`  ${(methodName[r.method] ?? r.method).padEnd(16)} ${r.split ? "складчина" : "один даритель"}   позиций: ${n(r.c)}`);
+  }
+  if (payouts.length === 0) console.log("  позиций за период нет");
+
+  section("Напоминания и сообщения дарителям (А-13, А-14)");
+  const giverMsgs = await db.$queryRaw<{ type: string; reason: string | null; delivered: string | null; c: bigint }[]>`
+    SELECT type, props->>'reason' AS reason, props->>'delivered' AS delivered, COUNT(*) AS c FROM "Event"
+    WHERE type IN ('reminder_sent', 'giver_notified') AND "createdAt" >= ${since} GROUP BY 1, 2, 3 ORDER BY 1, 2, 3`;
+  for (const r of giverMsgs) {
+    console.log(`  ${r.type === "reminder_sent" ? "напоминание" : r.reason}   доставлено=${r.delivered}   ${n(r.c)}`);
+  }
+  if (giverMsgs.length === 0) console.log("  сообщений дарителям за период нет");
 
   section("Ошибки API (5xx)");
   const errors = await db.$queryRaw<{ route: string; c: bigint }[]>`

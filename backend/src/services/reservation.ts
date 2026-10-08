@@ -29,6 +29,8 @@ export async function resolveExpiredReservation(itemId: string) {
         reservedByUserId: null,
         reservedAt: null,
         reservationTtl: null,
+        // А-14: следующая бронь начинает отсчёт напоминаний заново.
+        lastReminderAt: null,
       },
     });
   }
