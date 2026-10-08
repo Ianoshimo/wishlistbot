@@ -24,6 +24,15 @@
      акцентная кнопка), не для общего accent - см. черновик. */
   --highlight: #9aad2e;
   --highlight-soft: rgba(196, 224, 90, 0.25);
+  /* Аудит 2026-10-08, А-26: цвета ТЕКСТА статусов и текста на акцентных
+     кнопках - отдельно от цветов фона/плашек, чтобы держать контраст
+     WCAG 4.5:1 и не менять саму палитру. Светлая тема: оранжевый и
+     зелёный текст темнее (были 2.2-3.3:1). Расчёт - scratchpad аудита P2. */
+  --warning-text: #8f5010;
+  --success-text: #2a6e5c;
+  --accent-text: #4d3e99;
+  --on-accent: #ffffff;
+  --on-danger: #ffffff;
 }
 
 :root[data-theme="dark"] {
@@ -42,6 +51,14 @@
   --danger-soft: rgba(168, 61, 92, 0.22);
   --highlight: #c4e05a;
   --highlight-soft: rgba(196, 224, 90, 0.18);
+  /* А-26: в тёмной теме белый на #8a7ae0 - 3.5:1, поэтому текст на
+     акцентных кнопках тёмный (5.3:1); акцентный текст на тёмном фоне -
+     светлее (5.7:1 на плашке "Свободно" вместо 3.7:1). */
+  --warning-text: #e8a563;
+  --success-text: #6fd1b0;
+  --accent-text: #ada2ef;
+  --on-accent: #15111f;
+  --on-danger: #15111f;
 }
 
 * {
@@ -74,6 +91,45 @@ a {
 
 button {
   font-family: inherit;
+}
+
+/* Аудит 2026-10-08, А-28: чекбоксы и радио - в цвете бренда, а не
+   системным синим iOS. */
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--accent);
+}
+
+/* Аудит 2026-10-08, А-27: невидимое расширение зоны нажатия до 44x44
+   (Apple HIG) у мелких кнопок 32-34 px - визуал не меняется. Элементу
+   нужен position: relative (класс ставит сам). */
+.hit44 {
+  position: relative;
+}
+.hit44::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+}
+
+/* Аудит 2026-10-08, А-29: скелетон загрузки вместо пустого экрана. */
+@keyframes wishlistbot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+.skeleton {
+  background: var(--border);
+  animation: wishlistbot-pulse 1.2s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
 }
 
 @keyframes wishlistbot-sheet-up {
