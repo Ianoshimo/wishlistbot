@@ -33,7 +33,10 @@ const ERROR_MESSAGES: Record<string, string> = {
   sbp_phone_required: "Укажите номер телефона для перевода по СБП",
   wishlist_limit_reached: "Можно завести не больше 3 вишлистов",
   contributors_below_joined: "Уже присоединилось больше участников - меньше мест поставить нельзя",
-  split_needs_payment_target: "Чтобы скинуться, нужен номер для перевода по СБП или ссылка на сбор в банке",
+  split_needs_payout: "Чтобы скинуться, выберите способ получить деньги: СБП или сбор в банке",
+  self_purchased_needs_payout: "Подарок уже куплен - выберите, как друзьям перевести деньги: СБП или сбор в банке",
+  sbp_bank_required: "Укажите банк, в который переводить по СБП",
+  fundraiser_url_required: "Вставьте ссылку на сбор из приложения банка",
   split_item_already_reserved: "Подарок уже забронирован одним человеком - складчину включить нельзя",
   item_already_bought: "Подарок уже куплен - менять можно только ссылку, название, цену и фото",
   item_has_givers: "Подарок уже забронирован - способ подарить менять нельзя, чтобы не подвести дарителя",
@@ -99,6 +102,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export type ItemStatus = "available" | "reserved" | "bought";
+export type PayoutMethod = "sbp" | "fundraiser";
 
 export interface Item {
   id: string;
@@ -107,10 +111,15 @@ export interface Item {
   price: number | null;
   imageUrl: string | null;
   status: ItemStatus;
+  // "Уже купил сам" - с аудита 2026-10-08 (А-5) только информация "в
+  // магазин идти не нужно".
   selfPurchased: boolean;
-  // Приходит только после брони (status !== "available") - см.
-  // backend/src/routes/items.ts.
+  // А-5: способ получить деньги на этот подарок (null - покупка в магазине).
+  payoutMethod: PayoutMethod | null;
+  // Реквизиты СБП - только держателю брони/доли и владельцу (hotfix Н-1),
+  // остальным null.
   sbpPhone: string | null;
+  sbpBank: string | null;
   // Беклог В-6: true только если бронь принадлежит текущему telegramId -
   // identity дарителя при этом наружу не раскрывается.
   reservedByMe: boolean;
@@ -166,6 +175,14 @@ export interface WishlistResponse {
   occasionTitle: string | null;
   occasionDate: string | null;
   items: Item[];
+}
+
+// А-5: реквизиты по умолчанию для денежных подарков + токен календаря.
+export interface Me {
+  sbpPhone: string | null;
+  sbpBank: string | null;
+  fundraiserUrl: string | null;
+  calendarToken: string | null;
 }
 
 export interface MyWishlistSummary {
@@ -232,8 +249,10 @@ export const api = {
       title?: string;
       price?: number;
       selfPurchased?: boolean;
-      sbpPhone?: string;
       maxContributors?: number;
+      payoutMethod?: PayoutMethod | null;
+      sbpPhone?: string;
+      sbpBank?: string;
       fundraiserUrl?: string;
     },
   ) =>
@@ -250,7 +269,7 @@ export const api = {
   getMe: () => {
     const telegramId = getTelegramId();
     const qs = telegramId ? `?telegramId=${telegramId}` : "";
-    return request<{ sbpPhone: string | null; calendarToken: string | null }>(`/api/me${qs}`);
+    return request<Me>(`/api/me${qs}`);
   },
 
   // Повод вишлиста (CLAUDE.md, 2026-10-02) - оба поля вместе, null+null
@@ -294,9 +313,11 @@ export const api = {
       price?: number | null;
       url?: string;
       maxContributors?: number;
-      fundraiserUrl?: string | null;
+      payoutMethod?: PayoutMethod | null;
+      fundraiserUrl?: string;
       selfPurchased?: boolean;
       sbpPhone?: string;
+      sbpBank?: string;
       priority?: boolean;
       refreshPreview?: boolean;
     },

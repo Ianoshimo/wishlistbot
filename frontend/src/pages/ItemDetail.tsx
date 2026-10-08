@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import { api, apiError, formatRub, trackEvent, type Item, type UiError } from "../api";
-import { openExternalLink } from "../telegram";
-import { BottomSheet, CopyRow, ErrorBanner, Header, PrimaryButton, Screen, StoreBadge } from "../components/UI";
+import { openExternalLink, requestBotMessages } from "../telegram";
+import { BottomSheet, CopyRow, ErrorBanner, Header, PrimaryButton, Screen, StoreBadge, Thumbnail } from "../components/UI";
 
 // Спека итерации 1, п.2-3: полный жизненный цикл брони в одном экране,
 // как в дизайн-макете (артборд ItemDetail) - available → reserved → bought.
@@ -64,13 +64,16 @@ export function ItemDetail() {
   if (!item) return null;
 
   // "Скинуться на подарок" (CLAUDE.md, 2026-10-02) - несколько дарителей
-  // делят один selfPurchased-перевод вместо брони одним человеком. Та же
-  // пара ручек (reserve/markBought), бэкенд сам различает режим по
+  // делят один подарок вместо брони одним человеком. Та же пара ручек
+  // (reserve/markBought), бэкенд сам различает режим по
   // item.maxContributors - см. backend/src/routes/items.ts.
   const isSplit = item.maxContributors > 1;
-  // ТЗ блок 4: сбор по ссылке банка - скидываются на ещё не купленный
-  // подарок, деньги идут в сбор получателя, а не на его номер.
-  const isFundraiser = isSplit && item.hasFundraiser && !item.selfPurchased;
+  // Аудит 2026-10-08, А-5: способ получить деньги выбран на подарке -
+  // СБП (номер + банк), сбор в банке или нет (покупка в магазине). Не
+  // зависит от "уже купил сам" и от складчины.
+  const method = item.payoutMethod;
+  const isFundraiser = method === "fundraiser";
+  const isSbp = method === "sbp";
   const openFundraiser = (url: string | null) => {
     if (!url) return;
     trackEvent("fundraiser_link_clicked");
@@ -83,10 +86,18 @@ export function ItemDetail() {
     !item.viewerIsOwner &&
     (isSplit ? !item.reservedByMe && !full && item.status !== "bought" : item.status === "available");
 
+  // Аудит 2026-10-08, А-11: товар можно посмотреть ДО брони - скрываем
+  // ссылку только при чужой брони / заполненной чужой складчине (Н-5) и у
+  // уже подаренного не-участнику.
+  const storeVisible = item.viewerIsOwner || item.reservedByMe || item.status === "available";
+  const storeLinkLabel = item.reservedByMe && !method && item.status === "reserved" ? "Перейти в магазин" : "Посмотреть в магазине";
+
   const reserve = async () => {
     setError(null);
     try {
       await api.reserveItem(itemId, revealIdentity);
+      // А-14: чтобы дошли напоминания и "спасибо" от бота.
+      requestBotMessages();
       if (isFundraiser) {
         // Ссылку на сбор бэкенд отдаёт только участнику - берём её из
         // свежего ответа после присоединения.
@@ -96,7 +107,7 @@ export function ItemDetail() {
         return;
       }
       await reload();
-      if (item.selfPurchased) setSbpSheetOpen(true);
+      if (isSbp) setSbpSheetOpen(true);
     } catch (err) {
       setError(apiError(err));
       // QA-16: после конфликта ("уже забронировали") показываем актуальное
@@ -129,7 +140,10 @@ export function ItemDetail() {
             style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 14, background: "var(--border)" }}
           />
         )}
-        <div>
+        <div style={{ display: "flex", gap: 14, alignItems: "center" }}>
+          {/* А-9: без фото - заглушка в цветах бренда рядом с названием. */}
+          {!item.imageUrl && <Thumbnail src={null} store={item.store} size={72} />}
+          <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: 19, fontWeight: 700 }}>{item.title ?? item.url}</div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4 }}>
             {item.price && (
@@ -138,6 +152,7 @@ export function ItemDetail() {
               </span>
             )}
             <StoreBadge store={item.store} />
+          </div>
           </div>
         </div>
 
@@ -163,9 +178,7 @@ export function ItemDetail() {
               >
                 {item.viewerIsOwner
                   ? "Это ваша позиция - друзья видят её свободной и могут забронировать."
-                  : item.selfPurchased
-                    ? "Получатель уже купил(а) этот подарок сам(а) - идти в магазин не нужно, после брони вы получите номер телефона для перевода."
-                    : "Позиция ещё свободна. Никто не увидит, что именно вы дарите."}
+                  : availableText(item)}
               </div>
             )}
 
@@ -176,7 +189,7 @@ export function ItemDetail() {
                     всех, кроме реального держателя брони. */}
                 <div style={{ padding: 14, borderRadius: 14, background: "var(--warning-soft)", color: "var(--warning)", fontSize: 13 }}>
                   {item.reservedByMe
-                    ? `Забронировано вами · снимется ${expiresIn(item.reservationExpiresAt)}, если не отметить ${item.selfPurchased ? "перевод" : "покупку"}`
+                    ? `Забронировано вами · снимется ${expiresIn(item.reservationExpiresAt)}, если не отметить ${method ? "перевод" : "покупку"}`
                     : "Уже забронировано"}
                 </div>
 
@@ -184,45 +197,14 @@ export function ItemDetail() {
                     в магазин" было кликабельно даже для чужой брони, позволяя
                     задвоить покупку) полного QA-прогона - обе карточки
                     показываем строго держателю брони. */}
-                {item.reservedByMe &&
-                  (item.selfPurchased ? (
-                    <button
-                      onClick={() => setSbpSheetOpen(true)}
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        height: 50,
-                        borderRadius: 14,
-                        background: "var(--surface)",
-                        border: "1px solid var(--border)",
-                        fontSize: 15,
-                        fontWeight: 600,
-                      }}
-                    >
-                      Показать реквизиты для перевода
-                    </button>
-                  ) : (
-                    <a
-                      href={item.url}
-                      onClick={() => trackEvent("store_link_clicked", { store: item.store ?? "other" })}
-                      target="_blank"
-                      rel="noreferrer"
-                      style={{
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        height: 50,
-                        borderRadius: 14,
-                        background: "var(--surface)",
-                        border: "1px solid var(--border)",
-                        fontSize: 15,
-                        fontWeight: 600,
-                      }}
-                    >
-                      Перейти в магазин
-                    </a>
-                  ))}
+                {item.reservedByMe && method && (
+                  <button
+                    onClick={() => (isSbp ? setSbpSheetOpen(true) : openFundraiser(item.fundraiserUrl))}
+                    style={secondaryButton}
+                  >
+                    {isSbp ? "Показать реквизиты для перевода" : "Открыть сбор в банке"}
+                  </button>
+                )}
               </>
             )}
 
@@ -230,12 +212,24 @@ export function ItemDetail() {
               <div style={{ padding: 14, borderRadius: 14, background: "var(--success-soft)", color: "var(--success)", fontSize: 13 }}>
                 {!item.reservedByMe
                   ? "Этот подарок уже подарили."
-                  : item.selfPurchased
+                  : method
                     ? "Спасибо! Отмечено, что перевод отправлен."
                     : "Спасибо! Отмечено как купленное."}
               </div>
             )}
           </>
+        )}
+
+        {storeVisible && (
+          <a
+            href={item.url}
+            onClick={() => trackEvent("store_link_clicked", { store: item.store ?? "other", beforeReserve: !item.reservedByMe })}
+            target="_blank"
+            rel="noreferrer"
+            style={secondaryButton}
+          >
+            {storeLinkLabel}
+          </a>
         )}
       </div>
 
@@ -270,19 +264,19 @@ export function ItemDetail() {
           <>
             {canReserve && (
               <PrimaryButton onClick={reserve} style={{ width: "100%" }}>
-                {item.selfPurchased ? "Перевести деньгами" : "Забронировать"}
+                {isSbp ? "Перевести деньгами" : isFundraiser ? "Перевести через сбор" : "Забронировать"}
               </PrimaryButton>
             )}
             {item.status === "reserved" && item.reservedByMe && (
               <PrimaryButton onClick={markBought} style={{ width: "100%" }}>
-                {item.selfPurchased ? "Деньги отправлены" : "Отметить купленным"}
+                {isSbp ? "Деньги отправлены" : isFundraiser ? "Я перевёл в сбор" : "Отметить купленным"}
               </PrimaryButton>
             )}
           </>
         )}
       </div>
 
-      {item.selfPurchased && item.reservedByMe && (
+      {isSbp && item.reservedByMe && (
         <BottomSheet open={sbpSheetOpen} onClose={() => setSbpSheetOpen(false)} title="Перевод по СБП">
           <div style={{ padding: "4px 20px 24px" }}>
             <SbpPaymentCard item={item} />
@@ -363,7 +357,9 @@ function SplitStatus({
     <div style={{ padding: 14, borderRadius: 14, background: "var(--surface)", border: "1px solid var(--border)", fontSize: 14, color: "var(--text-secondary)" }}>
       {fundraiser
         ? `Получатель открыл сбор на этот подарок - ${progress}. Присоединяйтесь и скиньтесь через банк${share ? `, на каждого примерно ${share}` : ""}.`
-        : `Получатель уже купил(а) этот подарок сам(а) и разрешил(а) скинуться - ${progress}. Присоединяйтесь и переведите свою часть по номеру телефона.`}
+        : item.selfPurchased
+          ? `Получатель уже купил этот подарок сам - в магазин идти не нужно. Скидываемся - ${progress}. Присоединяйтесь и переведите свою часть по СБП${share ? `, примерно ${share}` : ""}.`
+          : `Получатель собирает деньги на этот подарок - ${progress}. Присоединяйтесь и переведите свою часть по СБП${share ? `, примерно ${share}` : ""}.`}
     </div>
   );
 }
@@ -392,6 +388,11 @@ function SbpPaymentCard({ item }: { item: Item }) {
       }}
     >
       {item.sbpPhone ? <CopyRow label="Номер телефона для перевода по СБП" value={item.sbpPhone} onCopied={() => trackEvent("sbp_details_copied", { field: "phone" })} /> : null}
+      {/* А-5: банк получателя - дарителю нужно выбрать его в переводе по СБП. */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+        <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Банк получателя</span>
+        <span style={{ fontSize: 15, fontWeight: 600 }}>{item.sbpBank ?? "Не указан - уточните у получателя"}</span>
+      </div>
       {amount && (
         <CopyRow
           label={isSplit ? `Сумма (ваша часть из ${item.maxContributors})` : "Сумма"}
@@ -404,12 +405,37 @@ function SbpPaymentCard({ item }: { item: Item }) {
       <ol style={{ margin: 0, paddingLeft: 18, fontSize: 13, color: "var(--text-secondary)", display: "flex", flexDirection: "column", gap: 6 }}>
         <li>Откройте приложение банка</li>
         <li>Выберите перевод по номеру телефона (СБП)</li>
-        <li>Вставьте номер телефона</li>
+        <li>Вставьте номер телефона и выберите банк получателя</li>
         <li>Добавьте комментарий с названием подарка</li>
         <li>Укажите сумму и отправьте перевод</li>
       </ol>
     </div>
   );
+}
+
+const secondaryButton = {
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  height: 50,
+  borderRadius: 14,
+  background: "var(--surface)",
+  border: "1px solid var(--border)",
+  color: "var(--text-primary)",
+  fontSize: 15,
+  fontWeight: 600,
+} as const;
+
+// Текст свободного подарка для дарителя - по способу подарить (А-5).
+function availableText(item: Item): string {
+  const bought = item.selfPurchased ? "Получатель уже купил этот подарок сам - в магазин идти не нужно. " : "";
+  if (item.payoutMethod === "sbp") {
+    return `${bought}${item.selfPurchased ? "" : "Получатель просит подарить деньгами и купит подарок сам. "}После брони вы получите номер телефона и банк для перевода по СБП.`;
+  }
+  if (item.payoutMethod === "fundraiser") {
+    return `${bought}${item.selfPurchased ? "" : "Получатель открыл сбор в банке на этот подарок. "}После брони откроется ссылка на сбор.`;
+  }
+  return "Позиция ещё свободна. Никто не увидит, что именно вы дарите.";
 }
 
 // Срок брони/доли (5 дней, спека п.2; для доли в "скинуться" - с

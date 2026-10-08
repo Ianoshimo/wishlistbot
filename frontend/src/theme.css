@@ -56,11 +56,15 @@ body {
   color: var(--text-primary);
 }
 
-/* Space Grotesk - только заголовки/крупные числа (см. index.html для
-   подключения шрифта), текст интерфейса остаётся системным - это
-   по-прежнему веб внутри Telegram, не отдельный бренд-сайт. */
+/* Unbounded (аудит 2026-10-08, А-42; было Space Grotesk без кириллицы) -
+   только заголовки/крупные числа (см. index.html для подключения
+   шрифта), текст интерфейса остаётся системным - это по-прежнему веб
+   внутри Telegram, не отдельный бренд-сайт. Unbounded широкий - чуть
+   поджимаем трекинг, длинные заголовки переносятся по словам. */
 .font-display {
-  font-family: "Space Grotesk", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: "Unbounded", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
 }
 
 a {

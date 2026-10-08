@@ -8,11 +8,14 @@
          если конкретный движок WebView смотрит на meta-тег. -->
     <meta http-equiv="Cache-Control" content="no-store" />
     <title>Вишлист-бот</title>
-    <!-- Редизайн "Электрик" (2026-10-01, согласовано пользователем по
-         4 вариантам палитры) - Space Grotesk для заголовков, системный
-         шрифт остаётся для текста интерфейса (см. theme.css). -->
+    <!-- Редизайн "Электрик" (2026-10-01) - шрифт заголовков. Аудит
+         2026-10-08, А-42: Unbounded вместо Space Grotesk - у того нет
+         кириллицы, русские заголовки рисовались системным шрифтом.
+         Unbounded - тот же, что в презентации. Текст интерфейса -
+         системный шрифт (см. theme.css). -->
     <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&display=swap" rel="stylesheet" />
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
   </head>
   <body>

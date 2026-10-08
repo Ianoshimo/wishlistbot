@@ -125,26 +125,73 @@ export function StatusBadge({ status }: { status: "available" | "reserved" | "bo
 
 // Фото подтягивается автоматически по ссылке на товар (без ручной
 // загрузки - решение 2026-10-02, см. backend/src/services/linkPreview.ts).
-// Не у каждой ссылки получится - тогда просто нет картинки, это ожидаемо.
-export function Thumbnail({ src, size = 48 }: { src: string | null; size?: number }) {
-  if (!src) return null;
+// Не у каждой ссылки получится (антибот Ozon/Авито/Маркета). Аудит
+// 2026-10-08, А-9: вместо пустоты - заглушка в цветах бренда того же
+// размера (карточки одной ширины): буква магазина или значок подарка.
+// Битая ссылка на картинку тоже даёт заглушку.
+const STORE_LETTER: Record<string, string> = {
+  Ozon: "O",
+  Wildberries: "W",
+  "Яндекс.Маркет": "Я",
+  Авито: "А",
+  AliExpress: "A",
+};
+
+export function Thumbnail({ src, size = 48, store = null }: { src: string | null; size?: number; store?: string | null }) {
+  const [broken, setBroken] = useState(false);
+  useEffect(() => setBroken(false), [src]);
+  if (src && !broken) {
+    return (
+      <img
+        src={src}
+        alt=""
+        loading="lazy"
+        onError={() => setBroken(true)}
+        style={{
+          width: size,
+          height: size,
+          borderRadius: size >= 64 ? 14 : 10,
+          objectFit: "cover",
+          flexShrink: 0,
+          background: "var(--border)",
+        }}
+      />
+    );
+  }
+  const letter = store ? STORE_LETTER[store] : undefined;
   return (
-    <img
-      src={src}
-      alt=""
-      loading="lazy"
-      onError={(e) => {
-        e.currentTarget.style.display = "none";
-      }}
+    <div
+      aria-hidden="true"
+      data-placeholder="thumbnail"
       style={{
         width: size,
         height: size,
-        borderRadius: 10,
-        objectFit: "cover",
+        borderRadius: size >= 64 ? 14 : 10,
         flexShrink: 0,
-        background: "var(--border)",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        background: "linear-gradient(135deg, var(--accent-soft), var(--highlight-soft))",
+        color: "var(--accent)",
       }}
-    />
+    >
+      {letter ? (
+        <span className="font-display" style={{ fontSize: Math.round(size * 0.42), fontWeight: 700, lineHeight: 1 }}>
+          {letter}
+        </span>
+      ) : (
+        <svg width={Math.round(size * 0.46)} height={Math.round(size * 0.46)} viewBox="0 0 24 24" fill="none">
+          <rect x="3" y="8" width="18" height="13" rx="2" stroke="currentColor" strokeWidth="1.8" />
+          <path d="M3 12h18M12 8v13" stroke="currentColor" strokeWidth="1.8" />
+          <path
+            d="M12 8c-1.5-3-5-3.5-5.5-1.5S9 8 12 8zm0 0c1.5-3 5-3.5 5.5-1.5S15 8 12 8z"
+            stroke="currentColor"
+            strokeWidth="1.8"
+            strokeLinejoin="round"
+          />
+        </svg>
+      )}
+    </div>
   );
 }
 
@@ -458,6 +505,7 @@ export function Field({
   type = "text",
   min,
   maxLength,
+  list,
 }: {
   label: string;
   value: string;
@@ -466,6 +514,8 @@ export function Field({
   type?: string;
   min?: string;
   maxLength?: number;
+  // id <datalist> с подсказками (банк для СБП, А-5).
+  list?: string;
 }) {
   return (
     <label style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -476,6 +526,7 @@ export function Field({
         placeholder={placeholder}
         min={min}
         maxLength={maxLength}
+        list={list}
         onChange={(e) => onChange(e.target.value)}
         style={{
           height: 48,
@@ -547,4 +598,62 @@ export function Placeholder({ title, backTo }: { title: string; backTo: string }
       </div>
     </Screen>
   );
+}
+
+// Строка-переключатель с подписью (формы добавления и правки подарка).
+export function ToggleRow({
+  checked,
+  onChange,
+  disabled,
+  title,
+  hint,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+  title: string;
+  hint: ReactNode;
+}) {
+  return (
+    <label
+      style={{
+        display: "flex",
+        gap: 12,
+        alignItems: "flex-start",
+        padding: 14,
+        borderRadius: 14,
+        background: "var(--surface)",
+        border: "1px solid var(--border)",
+        cursor: disabled ? "not-allowed" : "pointer",
+        opacity: disabled ? 0.55 : 1,
+      }}
+    >
+      <input
+        type="checkbox"
+        checked={checked}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.checked)}
+        style={{ width: 20, height: 20, marginTop: 1, flexShrink: 0 }}
+      />
+      <span>
+        <span style={{ display: "block", fontSize: 14, fontWeight: 600 }}>{title}</span>
+        <span style={{ display: "block", fontSize: 13, color: "var(--text-secondary)", marginTop: 2 }}>{hint}</span>
+      </span>
+    </label>
+  );
+}
+
+// Аудит 2026-10-08, А-5: подпись способа получить деньги в списках -
+// "Подарок деньгами · СБП" / "Сбор в банке" (+ складчина), "уже купил сам" -
+// пометкой "в магазин не нужно" (не словом "куплено", А-7).
+export function PayoutLabel({
+  item,
+}: {
+  item: { payoutMethod: "sbp" | "fundraiser" | null; selfPurchased: boolean; maxContributors: number; contributorsCount: number };
+}) {
+  if (!item.payoutMethod) return null;
+  const parts = [item.payoutMethod === "sbp" ? "Подарок деньгами · СБП" : "Сбор в банке"];
+  if (item.selfPurchased) parts.push("в магазин не нужно");
+  if (item.maxContributors > 1) parts.push(`участвуют ${item.contributorsCount} из ${item.maxContributors}`);
+  return <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{parts.join(" · ")}</div>;
 }

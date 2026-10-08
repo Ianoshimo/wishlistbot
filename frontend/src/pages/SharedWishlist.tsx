@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { absoluteApiUrl, api, apiError, formatOccasionDate, formatRub, trackEvent, type UiError, type WishlistResponse } from "../api";
 import { markStartParamHandled, openExternalLink } from "../telegram";
 import { MY_SLUG_KEY } from "./MyWishlist";
-import { ErrorBanner, Header, PriorityStar, Screen, StatusBadge, StoreBadge, Thumbnail } from "../components/UI";
+import { ErrorBanner, Header, PayoutLabel, PriorityStar, Screen, StatusBadge, StoreBadge, Thumbnail } from "../components/UI";
 
 // Спека итерации 1, п.9 + флоу-итерация-1.md: первый переход по ссылке
 // показывает приглашение, повторный - сразу список. Метка "видел ли уже"
@@ -188,7 +188,7 @@ export function SharedWishlist() {
               borderRadius: 14,
             }}
           >
-            <Thumbnail src={item.imageUrl} />
+            <Thumbnail src={item.imageUrl} store={item.store} />
             <div style={{ flexGrow: 1, minWidth: 0 }}>
               <div style={{ fontSize: 15, fontWeight: 600 }}>{item.title ?? item.url}</div>
               {/* QA-9: цена в списке и у дарителя - выбирать подарок под
@@ -202,12 +202,7 @@ export function SharedWishlist() {
                 <StoreBadge store={item.store} />
                 <StatusBadge status={item.status} />
               </div>
-              {(item.selfPurchased || item.hasFundraiser) && (
-                <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                  {item.selfPurchased ? "Подарок деньгами · перевод по СБП" : "Сбор по ссылке банка"}
-                  {item.maxContributors > 1 && ` · участвуют ${item.contributorsCount} из ${item.maxContributors}`}
-                </div>
-              )}
+              <PayoutLabel item={item} />
             </div>
             <PriorityStar active={item.priority} editable={false} />
           </Link>

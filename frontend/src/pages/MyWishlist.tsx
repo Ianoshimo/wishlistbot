@@ -11,6 +11,7 @@ import {
   Screen,
   StatusBadge,
   StoreBadge,
+  PayoutLabel,
   Thumbnail,
 } from "../components/UI";
 import { AddItemForm } from "../components/AddItemForm";
@@ -127,12 +128,9 @@ export function MyWishlist() {
 
   // Беклог Н-4: бэкенд умел удалять позиции ещё с фикса Б-2, но во
   // фронтенде не было вообще никакого способа это вызвать.
-  const deleteItem = async (itemId: string, status: string) => {
-    const message =
-      status === "available"
-        ? "Удалить эту позицию из вишлиста?"
-        : "Эта позиция уже забронирована или куплена - всё равно удалить?";
-    if (!window.confirm(message)) return;
+  const deleteItem = async (item: Item) => {
+    if (!window.confirm(deleteConfirmText(item))) return;
+    const itemId = item.id;
     setActionError(null);
     try {
       await api.deleteItem(itemId);
@@ -291,7 +289,7 @@ export function MyWishlist() {
             }}
           >
             {sortedItems.map((item) => (
-              <SwipeToDelete key={item.id} onDelete={() => deleteItem(item.id, item.status)}>
+              <SwipeToDelete key={item.id} onDelete={() => deleteItem(item)}>
                 <div
                   style={{
                     display: "flex",
@@ -304,7 +302,7 @@ export function MyWishlist() {
                     opacity: item.status === "bought" ? 0.6 : 1,
                   }}
                 >
-                  <Thumbnail src={item.imageUrl} />
+                  <Thumbnail src={item.imageUrl} store={item.store} />
                   <div style={{ flexGrow: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 15, fontWeight: 600 }}>
                       {item.title ?? item.url}
@@ -321,12 +319,7 @@ export function MyWishlist() {
                       <StoreBadge store={item.store} />
                       <StatusBadge status={item.status} />
                     </div>
-                    {(item.selfPurchased || item.hasFundraiser) && (
-                      <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                        {item.selfPurchased ? "Подарок деньгами · перевод по СБП" : "Сбор по ссылке банка"}
-                        {item.maxContributors > 1 && ` · участвуют ${item.contributorsCount} из ${item.maxContributors}`}
-                      </div>
-                    )}
+                    <PayoutLabel item={item} />
                     {item.giverNames.length > 0 && (
                       <div style={{ fontSize: 12, color: "var(--accent)" }}>
                         {item.giverNames.length > 1 ? "Дарят: " : "Дарит: "}
@@ -448,6 +441,26 @@ export function MyWishlist() {
           сбор в коде остались нетронутыми. */}
     </Screen>
   );
+}
+
+// Аудит 2026-10-08, А-13: подарок с дарителями удалять можно, но с
+// предупреждением, сколько человек участвует, - бэкенд сообщит каждому из
+// них (без имён других). Складчина до заполнения в API - "available",
+// поэтому смотрим на contributorsCount, а не только на статус.
+function peopleWord(n: number): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  return mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? "человека" : "человек";
+}
+
+export function deleteConfirmText(item: Item): string {
+  if (item.status === "bought") return "Этот подарок уже подарили - убрать его из списка? Дарителям писать не будем.";
+  const n = item.contributorsCount;
+  if (n === 0) return "Удалить этот подарок из вишлиста?";
+  if (item.maxContributors > 1) {
+    return `В складчине на этот подарок уже ${n === 1 ? "участвует" : "участвуют"} ${n} ${peopleWord(n)} - удалить? Мы сообщим им, что подарок удалён.`;
+  }
+  return "Этот подарок уже забронировал 1 человек - удалить? Мы сообщим ему, что подарок удалён и бронь снята.";
 }
 
 // ТЗ блок 4, п.5.2: "Поделиться" и "Повод" - крупными кнопками в зоне

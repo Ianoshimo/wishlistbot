@@ -14,6 +14,9 @@ interface TelegramWebApp {
   ready: () => void;
   expand: () => void;
   openLink?: (url: string) => void;
+  openTelegramLink?: (url: string) => void;
+  requestWriteAccess?: (cb?: (granted: boolean) => void) => void;
+  isVersionAtLeast?: (version: string) => boolean;
   platform?: string;
   version?: string;
   isFullscreen?: boolean;
@@ -164,6 +167,33 @@ export function openExternalLink(url: string, httpFallback?: string) {
     }
   }
   window.location.href = url;
+}
+
+// Аудит 2026-10-08, А-16: ссылка t.me (например, t.me/share/url - выбор
+// чата для отправки) внутри Telegram открывается нативно, без выхода из
+// мини-аппа; вне Telegram - в новой вкладке.
+export function openTelegramLink(url: string) {
+  if (isRealTelegram && webApp?.openTelegramLink) {
+    webApp.openTelegramLink(url);
+    return;
+  }
+  window.open(url, "_blank", "noopener");
+}
+
+// Аудит 2026-10-08, А-14: бот может написать человеку, только если тот
+// запускал бота или разрешил сообщения. Даритель часто приходит сразу по
+// ссылке на вишлист, минуя /start - после брони просим разрешение, чтобы
+// дошли напоминания и "спасибо". Telegram сам не спрашивает повторно,
+// если доступ уже есть. Тихо ничего не делает вне Telegram и на старых
+// клиентах (Bot API < 6.9).
+export function requestBotMessages(): void {
+  if (!isRealTelegram || !webApp?.requestWriteAccess) return;
+  if (webApp.isVersionAtLeast && !webApp.isVersionAtLeast("6.9")) return;
+  try {
+    webApp.requestWriteAccess();
+  } catch {
+    // старый клиент - напоминания просто не дойдут, бронь работает
+  }
 }
 
 export function isInsideTelegram(): boolean {
