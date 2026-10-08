@@ -1,0 +1,19 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//wishlistbot//ru
+CALSCALE:GREGORIAN
+BEGIN:VEVENT
+UID:occasion-cmuzho4tv0010mrefjdpn5utc@wishlistbot
+DTSTAMP:20261008T000000Z
+DTSTART;VALUE=DATE:20261215
+RRULE:FREQ=YEARLY
+SUMMARY:День рождения Маши - тридцатник\, собираемся в баре на Патриарших
+URL:https://t.me/wishhdesk_bot?startapp=w_cmuzho4tv0011mref2vh4k9vr
+DESCRIPTION:https://t.me/wishhdesk_bot?startapp=w_cmuzho4tv0011mref2vh4k9vr
+BEGIN:VALARM
+ACTION:DISPLAY
+DESCRIPTION:Повод скоро - загляните в вишлист
+TRIGGER:-P3D
+END:VALARM
+END:VEVENT
+END:VCALENDAR
