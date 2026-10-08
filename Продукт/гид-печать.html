@@ -1,9 +1,13 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" data-theme="dark">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Гид по Whish Helper</title>
+<meta name="viewport" content="width=390">
+<title>Гид по Whish Helper — печать</title>
+<!-- Печатная версия презентации-для-пользователей.html (PDF под экран телефона).
+     Собрана скриптом из презентации; печать:
+     "Google Chrome for Testing" --headless --disable-gpu --no-pdf-header-footer
+       --virtual-time-budget=8000 --print-to-pdf=гид-whish-helper-тёмный-моб.pdf file://.../гид-печать.html -->
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Unbounded:wght@500;700&family=Golos+Text:wght@400;500;600;700&display=swap">
@@ -183,67 +187,80 @@ p { margin: 0; max-width: 36em; }
 .toc a i { width: 9px; height: 9px; border-radius: 50%; background: var(--line); display: block; }
 .toc a.on i { background: var(--accent); }
 @media (max-width: 1100px) { .toc { display: none; } }
+
+
+@page { size: 390px 844px; margin: 0; }
+html, body { width: 390px; margin: 0; background: var(--bg); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+body { font-size: 15.5px; line-height: 1.5; }
+.page { box-sizing: border-box; width: 390px; height: 844px; overflow: hidden; padding: 30px 18px 26px; display: flex; flex-direction: column; justify-content: center; gap: 22px; break-after: page; page-break-after: always; }
+.page:last-child { break-after: auto; page-break-after: auto; }
+.page .text { gap: 13px; }
+h1 { font-size: 34px; }
+h2 { font-size: 25px; }
+.lead { font-size: 16.5px; margin-top: 10px; }
+.note, .warnnote { font-size: 14px; }
+.steps { gap: 11px; }
+.points { gap: 10px; }
+.phone { box-shadow: none; max-width: 354px; }
+.faq { gap: 8px; }
+.faq details { padding: 11px 14px; }
+.faq details p { margin-top: 6px; font-size: 14px; }
+.faq summary::after, .faq details[open] summary::after { content: ""; }
+.cta { padding: 13px 20px; font-size: 16px; }
+
 </style>
-<style>body{margin:0}</style>
 </head>
 <body>
+<section class="page" data-id="start-1">
+<div class="text"><p class="count"><span>01 / 17</span><span class="handle">Whish Helper · бот @wishhdesk_bot в Telegram</span></p>
+<h1>Вишлист в Telegram, где подарки <span class="mark">не повторяются</span></h1>
+<p class="lead">Вы собираете список того, что хотите получить, и делитесь ссылкой. Друзья бронируют подарки и видят, что уже занято. Кто что дарит, остаётся сюрпризом.</p>
+<p class="note">Ниже два маршрута. Разделы с меткой «Получателю» — для того, кто ведёт вишлист. С меткой «Дарителю» — для тех, кто выбирает подарок.</p></div>
+</section>
 
-<div class="readbar" aria-hidden="true"><span id="readbar"></span></div>
-<nav class="toc" aria-label="Разделы" id="toc"></nav>
-
-<section class="slide" id="start" data-name="Что это">
-  <div class="inner">
-    <div class="text">
-      <p class="count"><span>01 / 17</span><span class="handle">Whish Helper · бот @wishhdesk_bot в Telegram</span></p>
-      <h1>Вишлист в Telegram, где подарки <span class="mark">не повторяются</span></h1>
-      <p class="lead">Вы собираете список того, что хотите получить, и делитесь ссылкой. Друзья бронируют подарки и видят, что уже занято. Кто что дарит, остаётся сюрпризом.</p>
-      <p class="note">Ниже два маршрута. Разделы с меткой «Получателю» — для того, кто ведёт вишлист. С меткой «Дарителю» — для тех, кто выбирает подарок.</p>
-    </div>
-    <div class="phone" aria-hidden="true">
+<section class="page" data-id="start-2">
+<div class="text"><p class="count"><span>01 / 17 · продолжение</span><span class="handle">Whish Helper · бот @wishhdesk_bot в Telegram</span></p></div>
+<div class="phone" aria-hidden="true">
       <div class="p-head"><span class="p-title">День рождения</span></div>
       <div class="progress"><b>1 из 3 куплено</b><div class="bar"><span style="width:33%"></span></div></div>
       <div class="card"><div><div class="c-name">Настольная игра</div><div class="c-meta"><span class="price">2&nbsp;490&nbsp;₽</span><span class="store">Wildberries</span><span class="badge b-busy">Занято</span></div></div><div class="icons"><span class="star-on">★</span></div></div>
       <div class="card"><div><div class="c-name">Беспроводные наушники</div><div class="c-meta"><span class="price">29&nbsp;990&nbsp;₽</span><span class="store">Ozon</span><span class="badge b-done">Куплено</span></div></div><div class="icons"><span>☆</span></div></div>
       <div class="card"><div><div class="c-name">Кофемашина</div><div class="c-meta"><span class="price">30&nbsp;000&nbsp;₽</span><span class="store">Яндекс.Маркет</span><span class="badge b-free">Свободно</span></div><div class="payout">Подарок деньгами · СБП</div></div><div class="icons"><span>☆</span></div></div>
     </div>
-  </div>
 </section>
 
-<section class="slide" id="how" data-name="Как работает">
-  <div class="inner">
-    <div class="text">
-      <p class="count"><span>02 / 17</span><span class="role all">Для всех</span></p>
-      <h2>Три шага от списка до подарка</h2>
-      <ol class="steps">
+<section class="page" data-id="how-1">
+<div class="text"><p class="count"><span>02 / 17</span><span class="role all">Для всех</span></p>
+<h2>Три шага от списка до подарка</h2>
+<ol class="steps">
         <li><div><h3>Получатель собирает список</h3><p>Добавляет ссылки на подарки из интернет-магазинов и для каждого выбирает, как его подарить: купить в магазине или перевести деньги.</p></div></li>
         <li><div><h3>Делится ссылкой</h3><p>Отправляет её друзьям лично или в общий чат прямо из приложения.</p></div></li>
         <li><div><h3>Друзья бронируют</h3><p>Каждый выбирает свободный подарок. У каждого подарка видна метка: «Свободно», «Занято» или «Куплено», поэтому два одинаковых подарка не купят.</p></div></li>
       </ol>
-      <p class="note">Всё работает внутри Telegram, отдельное приложение ставить не нужно. Сейчас это бесплатно. Telegram нужен и получателю, и дарителям.</p>
-    </div>
-    <div class="phone" aria-hidden="true">
+<p class="note">Всё работает внутри Telegram, отдельное приложение ставить не нужно. Сейчас это бесплатно. Telegram нужен и получателю, и дарителям.</p></div>
+<div class="phone" aria-hidden="true">
       <div class="c-meta" style="gap:8px; margin:0"><span class="badge b-free">Свободно</span><span>можно бронировать</span></div>
       <div class="c-meta" style="gap:8px; margin:0"><span class="badge b-busy">Занято</span><span>кто-то уже забронировал</span></div>
       <div class="c-meta" style="gap:8px; margin:0"><span class="badge b-done">Куплено</span><span>подарок уже подарили</span></div>
       <div class="c-meta" style="gap:8px; margin:0"><span class="badge b-mine">Вы бронируете</span><span>так даритель видит свою бронь</span></div>
     </div>
-  </div>
 </section>
 
-<section class="slide" id="create" data-name="Создать вишлист">
-  <div class="inner">
-    <div class="text">
-      <p class="count"><span>03 / 17</span><span class="role own">Получателю</span></p>
-      <h2>Создайте вишлист и добавьте первый подарок</h2>
-      <ol class="steps">
+<section class="page" data-id="create-1">
+<div class="text"><p class="count"><span>03 / 17</span><span class="role own">Получателю</span></p>
+<h2>Создайте вишлист и добавьте первый подарок</h2>
+<ol class="steps">
         <li><div><p>Найдите в Telegram бота <b>@wishhdesk_bot</b>, нажмите «Запустить», затем «Открыть Whish Helper» и «Создать свой вишлист».</p></div></li>
         <li><div><p>Нажмите «Добавить подарок» внизу экрана и вставьте ссылку на товар. Подойдёт и весь текст из кнопки «Поделиться» в приложении магазина — ссылку из него приложение вырежет само.</p></div></li>
         <li><div><p>Выберите, как подарить: «В магазине», «СБП» или «Сбор», и нажмите «Добавить в вишлист».</p></div></li>
       </ol>
-      <p>Название и фото обычно подтягиваются по ссылке сами, иногда до 30 секунд. Если магазин их не отдал, подарок всё равно добавится — с заглушкой вместо фото, а название и цену можно вписать вручную.</p>
-      <p class="note">Ссылку можно просто прислать боту в чат — он предложит её добавить. Если вишлистов несколько, бот спросит, в какой. Несколько ссылок подряд — у каждой своя кнопка. Что ещё умеет бот — команда /help.</p>
-    </div>
-    <div class="phone" aria-hidden="true">
+<p>Название и фото обычно подтягиваются по ссылке сами, иногда до 30 секунд. Если магазин их не отдал, подарок всё равно добавится — с заглушкой вместо фото, а название и цену можно вписать вручную.</p>
+<p class="note">Ссылку можно просто прислать боту в чат — он предложит её добавить. Если вишлистов несколько, бот спросит, в какой. Несколько ссылок подряд — у каждой своя кнопка. Что ещё умеет бот — команда /help.</p></div>
+</section>
+
+<section class="page" data-id="create-2">
+<div class="text"><p class="count"><span>03 / 17 · продолжение</span><span class="role own">Получателю</span></p></div>
+<div class="phone" aria-hidden="true">
       <div class="chat">
         <div class="msg me">https://www.wildberries.ru/catalog/…</div>
         <div class="msg bot">В какой вишлист добавить эту ссылку?</div>
@@ -251,22 +268,22 @@ p { margin: 0; max-width: 36em; }
         <div class="msg bot">Добавлено в «День рождения»: Настольная игра</div>
       </div>
     </div>
-  </div>
 </section>
 
-<section class="slide" id="manage" data-name="Ваш список">
-  <div class="inner">
-    <div class="text">
-      <p class="count"><span>04 / 17</span><span class="role own">Получателю</span></p>
-      <h2>До трёх вишлистов и управление подарками</h2>
-      <ul class="points">
+<section class="page" data-id="manage-1">
+<div class="text"><p class="count"><span>04 / 17</span><span class="role own">Получателю</span></p>
+<h2>До трёх вишлистов и управление подарками</h2>
+<ul class="points">
         <li><div><h3>Несколько списков</h3><p>Заведите до трёх, например на день рождения и на Новый год, и переключайтесь вкладками вверху. Новый список — кнопка «+» рядом с вкладками. Чтобы переименовать список, нажмите на его открытую вкладку ещё раз.</p></div></li>
         <li><div><h3>Звёздочка «хочу больше всего»</h3><p>Подарки со звёздочкой стоят первыми в списке, друзьям проще выбрать.</p></div></li>
         <li><div><h3>Карандаш меняет всё</h3><p>Ссылку, название, цену, способ подарить, реквизиты и складчину. Если подарок уже забронировали или к складчине присоединились, способ подарить не меняется, чтобы не подвести дарителя. Реквизиты исправить можно.</p></div></li>
         <li><div><h3>Удаление</h3><p>Проведите карточку влево и нажмите «Удалить» — приложение переспросит. Если подарок уже забронировали, бот сам сообщит дарителям, что подарок удалён и бронь снята.</p></div></li>
-      </ul>
-    </div>
-    <div class="phone" aria-hidden="true">
+      </ul></div>
+</section>
+
+<section class="page" data-id="manage-2">
+<div class="text"><p class="count"><span>04 / 17 · продолжение</span><span class="role own">Получателю</span></p></div>
+<div class="phone" aria-hidden="true">
       <div class="tabs"><span class="tab on">День рождения · 3</span><span class="tab">Новый год</span><span class="tab">+</span></div>
       <div class="callout">↑ нажмите ещё раз, чтобы переименовать</div>
       <div class="card"><div><div class="c-name">Настольная игра</div><div class="c-meta"><span class="price">2&nbsp;490&nbsp;₽</span><span class="store">Wildberries</span><span class="badge b-free">Свободно</span></div></div><div class="icons"><span class="star-on">★</span><span>✎</span></div></div>
@@ -274,41 +291,37 @@ p { margin: 0; max-width: 36em; }
       <div class="hint">← так выглядит карточка после свайпа влево</div>
       <div class="addbar"><div class="btn">+ Добавить подарок</div></div>
     </div>
-  </div>
 </section>
 
-<section class="slide" id="share" data-name="Поделиться">
-  <div class="inner">
-    <div class="text">
-      <p class="count"><span>05 / 17</span><span class="role own">Получателю</span></p>
-      <h2>Поделитесь списком с друзьями</h2>
-      <p>Под карточкой прогресса — крупная кнопка «Поделиться». Нажмите её, затем «Отправить в Telegram»: откроется выбор чата с готовым приглашением. Выберите друга или группу — и ссылка уйдёт.</p>
-      <p>Нужно отправить куда-то ещё? Рядом со ссылкой есть «Копировать». Если телефон не дал скопировать, нажмите на ссылку — она выделится целиком.</p>
-      <p>Друзья откроют список прямо в Telegram. Чтобы бронировать, им ничего не нужно настраивать.</p>
-    </div>
-    <div class="phone" aria-hidden="true">
+<section class="page" data-id="share-1">
+<div class="text"><p class="count"><span>05 / 17</span><span class="role own">Получателю</span></p>
+<h2>Поделитесь списком с друзьями</h2>
+<p>Под карточкой прогресса — крупная кнопка «Поделиться». Нажмите её, затем «Отправить в Telegram»: откроется выбор чата с готовым приглашением. Выберите друга или группу — и ссылка уйдёт.</p>
+<p>Нужно отправить куда-то ещё? Рядом со ссылкой есть «Копировать». Если телефон не дал скопировать, нажмите на ссылку — она выделится целиком.</p>
+<p>Друзья откроют список прямо в Telegram. Чтобы бронировать, им ничего не нужно настраивать.</p></div>
+<div class="phone" aria-hidden="true">
       <div class="p-title" style="text-align:center; padding-top:4px">Вишлист готов</div>
       <div class="p-sub">Отправьте ссылку друзьям — они увидят список и смогут забронировать подарок</div>
       <div class="btn" style="outline:2px solid var(--lime-strong);outline-offset:2px">Отправить в Telegram</div>
       <div class="row"><div style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:12.5px">https://t.me/wishhdesk_bot?startapp=w_…</div><span class="copy">Копировать</span></div>
     </div>
-  </div>
 </section>
 
-<section class="slide" id="payout" data-name="Как подарить">
-  <div class="inner">
-    <div class="text">
-      <p class="count"><span>06 / 17</span><span class="role own">Получателю</span></p>
-      <h2>Вещью или деньгами — решаете для каждого подарка</h2>
-      <ul class="points">
+<section class="page" data-id="payout-1">
+<div class="text"><p class="count"><span>06 / 17</span><span class="role own">Получателю</span></p>
+<h2>Вещью или деньгами — решаете для каждого подарка</h2>
+<ul class="points">
         <li><div><h3>В магазине</h3><p>Друг забронирует подарок и купит его сам.</p></div></li>
         <li><div><h3>СБП</h3><p>Друг переведёт деньги по номеру телефона. Укажите номер и банк — даритель увидит банк, чтобы выбрать его в переводе.</p></div></li>
         <li><div><h3>Сбор</h3><p>Друг переведёт деньги в ваш сбор в приложении банка. Создайте сбор в банке и вставьте ссылку на него.</p></div></li>
       </ul>
-      <p>Номер, банк и ссылку на сбор приложение запомнит и в следующий раз подставит само. Уже купили вещь и хотите вернуть деньги? Отметьте «Этот подарок уже у меня» — друзья увидят, что в магазин идти не нужно.</p>
-      <p class="warnnote"><b>Номер и банк увидит только тот, кто забронирует подарок.</b> Ссылку на сбор — только те, кто присоединится. Остальные их не видят.</p>
-    </div>
-    <div class="phone" aria-hidden="true">
+<p>Номер, банк и ссылку на сбор приложение запомнит и в следующий раз подставит само. Уже купили вещь и хотите вернуть деньги? Отметьте «Этот подарок уже у меня» — друзья увидят, что в магазин идти не нужно.</p>
+<p class="warnnote"><b>Номер и банк увидит только тот, кто забронирует подарок.</b> Ссылку на сбор — только те, кто присоединится. Остальные их не видят.</p></div>
+</section>
+
+<section class="page" data-id="payout-2">
+<div class="text"><p class="count"><span>06 / 17 · продолжение</span><span class="role own">Получателю</span></p></div>
+<div class="phone" aria-hidden="true">
       <div class="p-title">Новый подарок</div>
       <div class="field"><small>Ссылка на товар</small><div>https://www.ozon.ru/product/…</div></div>
       <div class="seg-wrap">
@@ -321,111 +334,99 @@ p { margin: 0; max-width: 36em; }
       <div class="hint" style="text-align:left">Запомним номер и банк — в следующий раз подставим сами.</div>
       <div class="btn">Добавить в вишлист</div>
     </div>
-  </div>
 </section>
 
-<section class="slide" id="money-own" data-name="Складчина">
-  <div class="inner">
-    <div class="text">
-      <p class="count"><span>07 / 17</span><span class="role own">Получателю</span></p>
-      <h2>Дорогой подарок? Пусть друзья скинутся</h2>
-      <p>Выберите «СБП» или «Сбор», включите «Можно скинуться нескольким» и укажите, сколько человек участвует: от 2 до 100. Сумма поделится между ними поровну, в списке друзья увидят «по ~3&nbsp;000&nbsp;₽ с человека». Число участников потом можно поменять карандашом.</p>
-      <p>В своём списке вы видите, сколько человек уже перевели свою часть и сколько только присоединились, и примерно собранную сумму — без имён. Так проще сверить поступления в банке.</p>
-      <p class="note">«Деньги отправлены» даритель отмечает сам, приложение перевод не проверяет. Поступление сверяйте в своём банке.</p>
-    </div>
-    <div class="phone" aria-hidden="true">
+<section class="page" data-id="money-own-1">
+<div class="text"><p class="count"><span>07 / 17</span><span class="role own">Получателю</span></p>
+<h2>Дорогой подарок? Пусть друзья скинутся</h2>
+<p>Выберите «СБП» или «Сбор», включите «Можно скинуться нескольким» и укажите, сколько человек участвует: от 2 до 100. Сумма поделится между ними поровну, в списке друзья увидят «по ~3&nbsp;000&nbsp;₽ с человека». Число участников потом можно поменять карандашом.</p>
+<p>В своём списке вы видите, сколько человек уже перевели свою часть и сколько только присоединились, и примерно собранную сумму — без имён. Так проще сверить поступления в банке.</p>
+<p class="note">«Деньги отправлены» даритель отмечает сам, приложение перевод не проверяет. Поступление сверяйте в своём банке.</p></div>
+</section>
+
+<section class="page" data-id="money-own-2">
+<div class="text"><p class="count"><span>07 / 17 · продолжение</span><span class="role own">Получателю</span></p></div>
+<div class="phone" aria-hidden="true">
       <div class="check"><span class="box">✓</span>Можно скинуться нескольким</div>
       <div class="field"><small>Сколько человек может скинуться (2–100)</small><div>3</div></div>
       <div class="hint">так подарок выглядит в вашем списке:</div>
       <div class="card"><div><div class="c-name">Велосипед</div><div class="c-meta"><span class="price">9&nbsp;000&nbsp;₽</span><span class="badge b-free">Свободно</span></div><div class="payout">Подарок деньгами · СБП · <span>по ~3&nbsp;000&nbsp;₽ с человека</span><br><span>перевели 1 из 3</span> · <span>ещё 1 участвует</span> · <span>собрано ≈ 3&nbsp;000&nbsp;₽</span></div></div><div class="icons"><span>☆</span><span>✎</span></div></div>
     </div>
-  </div>
 </section>
 
-<section class="slide" id="occasion" data-name="Повод">
-  <div class="inner">
-    <div class="text">
-      <p class="count"><span>08 / 17</span><span class="role own">Получателю</span></p>
-      <h2>Укажите повод, и друзья не забудут о празднике</h2>
-      <p>Нажмите кнопку «Повод и календарь» под карточкой прогресса. Впишите название повода и дату, например «День рождения» и 15 декабря.</p>
-      <p>Повод появится на странице вашего списка. Друзья смогут одним нажатием добавить его в календарь телефона с напоминанием за три дня.</p>
-    </div>
-    <div class="phone" aria-hidden="true">
+<section class="page" data-id="occasion-1">
+<div class="text"><p class="count"><span>08 / 17</span><span class="role own">Получателю</span></p>
+<h2>Укажите повод, и друзья не забудут о празднике</h2>
+<p>Нажмите кнопку «Повод и календарь» под карточкой прогресса. Впишите название повода и дату, например «День рождения» и 15 декабря.</p>
+<p>Повод появится на странице вашего списка. Друзья смогут одним нажатием добавить его в календарь телефона с напоминанием за три дня.</p></div>
+<div class="phone" aria-hidden="true">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px"><span class="btn ghost">Поделиться</span><span class="btn ghost" style="outline:2px solid var(--lime-strong);outline-offset:2px">Повод и календарь</span></div>
       <div class="field"><small>Название</small><div>День рождения</div></div>
       <div class="field"><small>Дата</small><div>15.12.2026</div></div>
       <div class="btn">Сохранить повод</div>
     </div>
-  </div>
 </section>
 
-<section class="slide" id="book" data-name="Бронь">
-  <div class="inner">
-    <div class="text">
-      <p class="count"><span>09 / 17</span><span class="role give">Дарителю</span></p>
-      <h2>Посмотрели, забронировали, купили, отметили</h2>
-      <ol class="steps">
+<section class="page" data-id="book-1">
+<div class="text"><p class="count"><span>09 / 17</span><span class="role give">Дарителю</span></p>
+<h2>Посмотрели, забронировали, купили, отметили</h2>
+<ol class="steps">
         <li><div><p>Откройте ссылку на список, которую прислал друг, и выберите подарок с меткой «Свободно». Кнопка «Посмотреть в магазине» есть ещё до брони — проверьте размер, цвет и отзывы.</p></div></li>
         <li><div><p>Нажмите «Забронировать». Для остальных у подарка появится метка «Занято», а у вас в списке — «Вы бронируете».</p></div></li>
         <li><div><p>Купите подарок и нажмите «Отметить купленным». Получатель узнает, что подарок куплен, но не узнает кем.</p></div></li>
       </ol>
-      <p class="note">Бронь держится 5 дней. Если за это время не отметить покупку, подарок снова станет свободным. Отдельной кнопки отмены брони пока нет. Внизу списка друга есть «Хочу такой же вишлист» — одно нажатие, и откроется ваш собственный.</p>
-    </div>
-    <div class="phone" aria-hidden="true">
+<p class="note">Бронь держится 5 дней. Если за это время не отметить покупку, подарок снова станет свободным. Отдельной кнопки отмены брони пока нет. Внизу списка друга есть «Хочу такой же вишлист» — одно нажатие, и откроется ваш собственный.</p></div>
+</section>
+
+<section class="page" data-id="book-2">
+<div class="text"><p class="count"><span>09 / 17 · продолжение</span><span class="role give">Дарителю</span></p></div>
+<div class="phone" aria-hidden="true">
       <div class="p-title">Настольная игра</div>
       <div class="banner warn">Забронировано вами · снимется через 5 дней, если не отметить покупку</div>
       <div class="btn ghost">Перейти в магазин</div>
       <div class="btn">Отметить купленным</div>
     </div>
-  </div>
 </section>
 
-<section class="slide" id="remind" data-name="Напоминания">
-  <div class="inner">
-    <div class="text">
-      <p class="count"><span>10 / 17</span><span class="role give">Дарителю</span></p>
-      <h2>Бот напомнит, пока подарок не отмечен</h2>
-      <p>После брони Telegram один раз спросит, можно ли боту писать вам, — разрешите. Пока бронь не отмечена, бот раз в сутки, днём с 10:00 до 21:00 по Москве, присылает напоминание: что за подарок, чей список и сколько дней осталось до снятия брони. В сообщении есть кнопка «Открыть подарок».</p>
-      <p>Как только отметите покупку или перевод, напоминания прекратятся, а бот скажет спасибо. Если получатель удалит подарок, бот сообщит, что бронь снята.</p>
-    </div>
-    <div class="phone" aria-hidden="true">
+<section class="page" data-id="remind-1">
+<div class="text"><p class="count"><span>10 / 17</span><span class="role give">Дарителю</span></p>
+<h2>Бот напомнит, пока подарок не отмечен</h2>
+<p>После брони Telegram один раз спросит, можно ли боту писать вам, — разрешите. Пока бронь не отмечена, бот раз в сутки, днём с 10:00 до 21:00 по Москве, присылает напоминание: что за подарок, чей список и сколько дней осталось до снятия брони. В сообщении есть кнопка «Открыть подарок».</p>
+<p>Как только отметите покупку или перевод, напоминания прекратятся, а бот скажет спасибо. Если получатель удалит подарок, бот сообщит, что бронь снята.</p></div>
+<div class="phone" aria-hidden="true">
       <div class="chat">
         <div class="msg bot">⏰ Вы забронировали подарок «Настольная игра» из списка «День рождения» (Аня).<small>Купите подарок и нажмите «Отметить купленным». Бронь снимется через 3 дня, если не отметить покупку.</small></div>
         <div class="kb one"><span>Открыть подарок</span></div>
         <div class="msg bot">🎉 Подарок «Настольная игра» из списка «День рождения» (Аня) отмечен купленным — спасибо!</div>
       </div>
     </div>
-  </div>
 </section>
 
-<section class="slide" id="secret" data-name="Сюрприз">
-  <div class="inner">
-    <div class="text">
-      <p class="count"><span>11 / 17</span><span class="role give">Дарителю</span></p>
-      <h2>Кто дарит, по умолчанию не видит никто</h2>
-      <p>Получатель и другие друзья видят только метку подарка, ваше имя скрыто.</p>
-      <p>Если хотите, чтобы получатель знал, что подарок от вас, перед бронью отметьте «Показать получателю, что дарю я». Имя увидит только получатель, остальные дарители — нет. Выбор делается один раз, при брони, потом его не изменить.</p>
-    </div>
-    <div class="phone" aria-hidden="true">
+<section class="page" data-id="secret-1">
+<div class="text"><p class="count"><span>11 / 17</span><span class="role give">Дарителю</span></p>
+<h2>Кто дарит, по умолчанию не видит никто</h2>
+<p>Получатель и другие друзья видят только метку подарка, ваше имя скрыто.</p>
+<p>Если хотите, чтобы получатель знал, что подарок от вас, перед бронью отметьте «Показать получателю, что дарю я». Имя увидит только получатель, остальные дарители — нет. Выбор делается один раз, при брони, потом его не изменить.</p></div>
+<div class="phone" aria-hidden="true">
       <div class="p-title">Кофемолка</div>
       <div class="banner plain">Подарок свободен. По умолчанию получатель не узнает, кто дарит.</div>
       <div class="btn ghost">Посмотреть в магазине</div>
       <div class="check"><span class="box"></span>Показать получателю, что дарю я</div>
       <div class="btn">Забронировать</div>
     </div>
-  </div>
 </section>
 
-<section class="slide" id="money-give" data-name="Подарок деньгами">
-  <div class="inner">
-    <div class="text">
-      <p class="count"><span>12 / 17</span><span class="role give">Дарителю</span></p>
-      <h2>Подарок деньгами: СБП или сбор в банке</h2>
-      <p><b>СБП.</b> У подарка с подписью «Подарок деньгами · СБП» вместо «Забронировать» — кнопка «Перевести деньгами». После нажатия откроется карточка: номер, банк получателя, сумма и комментарий, у полей есть «Копировать». Переведите деньги в приложении своего банка и нажмите «Деньги отправлены».</p>
-      <p><b>Сбор.</b> У подарка с подписью «Сбор в банке» — кнопка «Перевести через сбор». Откроется сбор в приложении банка; после перевода нажмите «Деньги переведены в сбор».</p>
-      <p class="note">Если рядом написано «в магазин не нужно», получатель уже купил вещь сам. Деньги идут напрямую из вашего банка получателю: Whish Helper в переводе не участвует и комиссию не берёт.</p>
-    </div>
-    <div class="phone" aria-hidden="true">
+<section class="page" data-id="money-give-1">
+<div class="text"><p class="count"><span>12 / 17</span><span class="role give">Дарителю</span></p>
+<h2>Подарок деньгами: СБП или сбор в банке</h2>
+<p><b>СБП.</b> У подарка с подписью «Подарок деньгами · СБП» вместо «Забронировать» — кнопка «Перевести деньгами». После нажатия откроется карточка: номер, банк получателя, сумма и комментарий, у полей есть «Копировать». Переведите деньги в приложении своего банка и нажмите «Деньги отправлены».</p>
+<p><b>Сбор.</b> У подарка с подписью «Сбор в банке» — кнопка «Перевести через сбор». Откроется сбор в приложении банка; после перевода нажмите «Деньги переведены в сбор».</p>
+<p class="note">Если рядом написано «в магазин не нужно», получатель уже купил вещь сам. Деньги идут напрямую из вашего банка получателю: Whish Helper в переводе не участвует и комиссию не берёт.</p></div>
+</section>
+
+<section class="page" data-id="money-give-2">
+<div class="text"><p class="count"><span>12 / 17 · продолжение</span><span class="role give">Дарителю</span></p></div>
+<div class="phone" aria-hidden="true">
       <div class="p-title">Перевод по СБП</div>
       <div class="row"><div><small>Номер телефона для перевода по СБП</small>+7 900 123-45-67</div><span class="copy">Копировать</span></div>
       <div class="row" style="grid-template-columns:1fr"><div><small>Банк получателя</small><b>Т-Банк</b></div></div>
@@ -433,60 +434,60 @@ p { margin: 0; max-width: 36em; }
       <div class="row"><div><small>Комментарий к переводу</small>Кофемашина</div><span class="copy">Копировать</span></div>
       <div class="btn">Деньги отправлены</div>
     </div>
-  </div>
 </section>
 
-<section class="slide" id="together" data-name="Скинуться">
-  <div class="inner">
-    <div class="text">
-      <p class="count"><span>13 / 17</span><span class="role give">Дарителю</span></p>
-      <h2>Скинуться на дорогой подарок</h2>
-      <ul class="points">
+<section class="page" data-id="together-1">
+<div class="text"><p class="count"><span>13 / 17</span><span class="role give">Дарителю</span></p>
+<h2>Скинуться на дорогой подарок</h2>
+<ul class="points">
         <li><div><p>В списке у такого подарка видно, сколько приходится на одного: «по ~3&nbsp;000&nbsp;₽ с человека».</p></div></li>
         <li><div><p>Нажмите «Перевести свою часть» (или «Скинуться через сбор»). Сумма в карточке уже поделена на число участников.</p></div></li>
         <li><div><p>Переведите деньги и нажмите «Деньги отправлены» (для сбора — «Моя часть переведена»). Остальных ждать не нужно, каждый отмечается сам.</p></div></li>
         <li><div><p>Подарок станет купленным, когда свою часть отметят все участники. Бот напишет каждому, что подарок собран.</p></div></li>
         <li><div><p>На перевод есть 5 дней с момента, как вы присоединились, — бот напомнит. Не успели — место освобождается для другого. Уже отмеченные переводы сохраняются.</p></div></li>
-      </ul>
-    </div>
-    <div class="phone" aria-hidden="true">
+      </ul></div>
+</section>
+
+<section class="page" data-id="together-2">
+<div class="text"><p class="count"><span>13 / 17 · продолжение</span><span class="role give">Дарителю</span></p></div>
+<div class="phone" aria-hidden="true">
       <div class="p-title">Велосипед</div>
       <div class="banner warn">Вы присоединились (участвуют 2 из 3) — переведите свою часть, примерно 3&nbsp;000&nbsp;₽. Место снимется через 5 дней, если не отметить перевод</div>
       <div class="btn ghost">Показать реквизиты для перевода</div>
       <div class="row"><div><small>Сумма (ваша часть из 3)</small><span class="price">3&nbsp;000&nbsp;₽</span></div><span class="copy">Копировать</span></div>
       <div class="btn">Деньги отправлены</div>
     </div>
-  </div>
 </section>
 
-<section class="slide" id="calendar" data-name="Календарь">
-  <div class="inner">
-    <div class="text">
-      <p class="count"><span>14 / 17</span><span class="role give">Дарителю</span></p>
-      <h2>Добавьте праздник друга в свой календарь</h2>
-      <p>Если получатель указал повод, на странице его списка будет плашка с датой и кнопкой «В календарь». Нажмите её и сохраните событие в календаре телефона. Напоминание придёт за три дня до праздника и будет повторяться каждый год.</p>
-      <p>После брони появится карточка «Напоминать о поводах друзей». В ней — «Подписаться на календарь»: одна подписка сама собирает праздники всех, кому вы дарите. Внутри Telegram откроется страница в браузере: на iPhone нажмите «Подписаться в Календаре», на Android — «Подписаться в Google Календаре».</p>
-      <p class="note">В подписку попадают только поводы списков, где вы сами бронировали подарок или участвуете в складчине. Чужие дни рождения туда не попадают.</p>
-    </div>
-    <div class="phone" aria-hidden="true">
+<section class="page" data-id="calendar-1">
+<div class="text"><p class="count"><span>14 / 17</span><span class="role give">Дарителю</span></p>
+<h2>Добавьте праздник друга в свой календарь</h2>
+<p>Если получатель указал повод, на странице его списка будет плашка с датой и кнопкой «В календарь». Нажмите её и сохраните событие в календаре телефона. Напоминание придёт за три дня до праздника и будет повторяться каждый год.</p>
+<p>После брони появится карточка «Напоминать о поводах друзей». В ней — «Подписаться на календарь»: одна подписка сама собирает праздники всех, кому вы дарите. Внутри Telegram откроется страница в браузере: на iPhone нажмите «Подписаться в Календаре», на Android — «Подписаться в Google Календаре».</p>
+<p class="note">В подписку попадают только поводы списков, где вы сами бронировали подарок или участвуете в складчине. Чужие дни рождения туда не попадают.</p></div>
+</section>
+
+<section class="page" data-id="calendar-2">
+<div class="text"><p class="count"><span>14 / 17 · продолжение</span><span class="role give">Дарителю</span></p></div>
+<div class="phone" aria-hidden="true">
       <div class="p-title">День рождения</div>
       <div class="banner accent"><span>🎉 День рождения · 15&nbsp;декабря</span><span class="mini-btn">В календарь</span></div>
       <div class="gcal"><i>▦</i><div><b>Напоминать о поводах друзей</b><small>Дни рождения тех, кому вы дарите, появятся в вашем календаре</small></div></div>
       <div class="hint">в календаре телефона появится:</div>
       <div class="cal"><small>Календарь телефона</small><b>День рождения</b><span>15 декабря · весь день · каждый год</span><span>Напоминание за 3 дня</span></div>
     </div>
-  </div>
 </section>
 
-<section class="slide" id="thanks" data-name="Поблагодарить">
-  <div class="inner">
-    <div class="text">
-      <p class="count"><span>15 / 17</span><span class="role own">Получателю</span></p>
-      <h2>Скажите спасибо фото или видео</h2>
-      <p>Когда подарок деньгами отмечен, бот пришлёт вам сообщение с названием подарка и кнопкой «🎁 Поблагодарить дарителя». Для подарка, купленного в магазине, бот просто сообщит, что он куплен.</p>
-      <p>Нажмите кнопку и отправьте боту фото, видео или кружок. Бот перешлёт его тому, кто перевёл деньги, или всем, если скидывались вместе, с подписью, что это благодарность от вас. Кому именно ушло сообщение, вы не узнаете, если даритель сам не показал своё имя.</p>
-    </div>
-    <div class="phone" aria-hidden="true">
+<section class="page" data-id="thanks-1">
+<div class="text"><p class="count"><span>15 / 17</span><span class="role own">Получателю</span></p>
+<h2>Скажите спасибо фото или видео</h2>
+<p>Когда подарок деньгами отмечен, бот пришлёт вам сообщение с названием подарка и кнопкой «🎁 Поблагодарить дарителя». Для подарка, купленного в магазине, бот просто сообщит, что он куплен.</p>
+<p>Нажмите кнопку и отправьте боту фото, видео или кружок. Бот перешлёт его тому, кто перевёл деньги, или всем, если скидывались вместе, с подписью, что это благодарность от вас. Кому именно ушло сообщение, вы не узнаете, если даритель сам не показал своё имя.</p></div>
+</section>
+
+<section class="page" data-id="thanks-2">
+<div class="text"><p class="count"><span>15 / 17 · продолжение</span><span class="role own">Получателю</span></p></div>
+<div class="phone" aria-hidden="true">
       <div class="chat">
         <div class="msg bot">💸 Вам перевели деньги за «Кофемашина» из списка «День рождения» — проверьте поступление в банке.</div>
         <div class="kb one"><span>🎁 Поблагодарить дарителя</span><span>Открыть вишлист</span></div>
@@ -495,75 +496,30 @@ p { margin: 0; max-width: 36em; }
         <div class="msg bot">Спасибо отправлено! 🎉</div>
       </div>
     </div>
-  </div>
 </section>
 
-<section class="slide" id="faq" data-name="Вопросы">
-  <div class="inner single">
-    <div class="text">
-      <p class="count"><span>16 / 17</span><span class="role all">Для всех</span></p>
-      <h2>Частые вопросы</h2>
-      <div class="faq">
-        <details><summary>Это платно?</summary><p>Нет, сейчас пользоваться бесплатно. За переводы по СБП и через сбор приложение тоже ничего не берёт — деньги идут напрямую через ваш банк.</p></details>
-        <details><summary>Нужен ли друзьям Telegram?</summary><p>Да. Список открывается внутри Telegram, поэтому и получателю, и дарителям нужен аккаунт.</p></details>
-        <details><summary>Дарители видят друг друга?</summary><p>Нет. Имя дарителя видит только получатель, и только если даритель сам отметил «Показать получателю, что дарю я».</p></details>
-        <details><summary>Можно отменить бронь?</summary><p>Отдельной кнопки пока нет. Бронь снимается сама через 5 дней, если не отметить покупку или перевод. До этого бот раз в сутки напоминает о ней.</p></details>
-        <details><summary>Можно поменять подарок после добавления?</summary><p>Да, карандашом у подарка в своём списке — всё, что задаётся при добавлении. Если подарок уже забронировали или к складчине присоединились, способ подарить не меняется, чтобы не подвести дарителя; ссылку, название, цену и реквизиты — можно. У уже подаренного — только ссылку, название, цену, фото и приоритет.</p></details>
-        <details><summary>Что будет с бронью, если я удалю подарок?</summary><p>Приложение переспросит и предупредит, сколько человек участвует. После удаления бот сам сообщит каждому дарителю, что подарок удалён и бронь снята.</p></details>
-        <details><summary>Можно удалить вишлист целиком?</summary><p>Пока нет. Можно удалить из него все подарки и переименовать его под новый повод.</p></details>
-        <details><summary>Сколько подарков можно добавить?</summary><p>До трёх вишлистов, в каждом — до 200 подарков.</p></details>
-        <details><summary>Не подтянулась картинка или название. Это ошибка?</summary><p>Нет. Некоторые магазины не дают прочитать страницу товара. Подарок всё равно добавится — с заглушкой вместо фото, название можно вписать вручную.</p></details>
-        <details><summary>Пропали данные после переустановки Telegram?</summary><p>Списки хранятся на сервере. Откройте бота заново, и приложение само их найдёт.</p></details>
-      </div>
-    </div>
-  </div>
+<section class="page" data-id="faq-1">
+<div class="text"><p class="count"><span>16 / 17</span><span class="role all">Для всех</span></p>
+<h2>Частые вопросы</h2>
+<div class="faq"><details open><summary>Это платно?</summary><p>Нет, сейчас пользоваться бесплатно. За переводы по СБП и через сбор приложение тоже ничего не берёт — деньги идут напрямую через ваш банк.</p></details><details open><summary>Нужен ли друзьям Telegram?</summary><p>Да. Список открывается внутри Telegram, поэтому и получателю, и дарителям нужен аккаунт.</p></details><details open><summary>Дарители видят друг друга?</summary><p>Нет. Имя дарителя видит только получатель, и только если даритель сам отметил «Показать получателю, что дарю я».</p></details><details open><summary>Можно отменить бронь?</summary><p>Отдельной кнопки пока нет. Бронь снимается сама через 5 дней, если не отметить покупку или перевод. До этого бот раз в сутки напоминает о ней.</p></details></div></div>
 </section>
 
-<section class="slide" id="go" data-name="Начать">
-  <div class="inner single">
-    <div class="text">
-      <p class="count"><span>17 / 17</span><span class="role all">Для всех</span></p>
-      <h1>Соберите свой <span class="mark">первый вишлист</span></h1>
-      <p class="lead">Откройте бота, нажмите «Запустить», затем «Открыть Whish Helper» и «Создать свой вишлист» — и добавьте первый подарок.</p>
-      <a class="cta" href="https://t.me/wishhdesk_bot" target="_blank" rel="noopener">Открыть @wishhdesk_bot</a>
-      <p class="note">Это ранняя версия Whish Helper. Если что-то не сработало, сделайте скриншот — и пишите Янчику.</p>
-    </div>
-  </div>
+<section class="page" data-id="faq-2">
+<div class="text"><p class="count"><span>16 / 17 · продолжение</span><span class="role all">Для всех</span></p>
+<div class="faq"><details open><summary>Можно поменять подарок после добавления?</summary><p>Да, карандашом у подарка в своём списке — всё, что задаётся при добавлении. Если подарок уже забронировали или к складчине присоединились, способ подарить не меняется, чтобы не подвести дарителя; ссылку, название, цену и реквизиты — можно. У уже подаренного — только ссылку, название, цену, фото и приоритет.</p></details><details open><summary>Что будет с бронью, если я удалю подарок?</summary><p>Приложение переспросит и предупредит, сколько человек участвует. После удаления бот сам сообщит каждому дарителю, что подарок удалён и бронь снята.</p></details><details open><summary>Можно удалить вишлист целиком?</summary><p>Пока нет. Можно удалить из него все подарки и переименовать его под новый повод.</p></details></div></div>
 </section>
 
-<script>
-(function () {
-  var slides = Array.prototype.slice.call(document.querySelectorAll(".slide"));
-  var toc = document.getElementById("toc");
-  var bar = document.getElementById("readbar");
-  var links = slides.map(function (s) {
-    var a = document.createElement("a");
-    a.href = "#" + s.id;
-    a.setAttribute("aria-label", s.dataset.name);
-    var label = document.createElement("span");
-    label.textContent = s.dataset.name;
-    a.appendChild(label);
-    a.appendChild(document.createElement("i"));
-    toc.appendChild(a);
-    return a;
-  });
-  function onScroll() {
-    var max = document.documentElement.scrollHeight - window.innerHeight;
-    bar.style.width = (max > 0 ? (window.scrollY / max) * 100 : 0) + "%";
-  }
-  window.addEventListener("scroll", onScroll, { passive: true });
-  onScroll();
-  if (!("IntersectionObserver" in window)) return;
-  var io = new IntersectionObserver(function (entries) {
-    entries.forEach(function (e) {
-      if (!e.isIntersecting) return;
-      var i = slides.indexOf(e.target);
-      links.forEach(function (l, j) { l.classList.toggle("on", j === i); });
-    });
-  }, { rootMargin: "-45% 0px -45% 0px" });
-  slides.forEach(function (s) { io.observe(s); });
-})();
-</script>
+<section class="page" data-id="faq-3">
+<div class="text"><p class="count"><span>16 / 17 · продолжение</span><span class="role all">Для всех</span></p>
+<div class="faq"><details open><summary>Сколько подарков можно добавить?</summary><p>До трёх вишлистов, в каждом — до 200 подарков.</p></details><details open><summary>Не подтянулась картинка или название. Это ошибка?</summary><p>Нет. Некоторые магазины не дают прочитать страницу товара. Подарок всё равно добавится — с заглушкой вместо фото, название можно вписать вручную.</p></details><details open><summary>Пропали данные после переустановки Telegram?</summary><p>Списки хранятся на сервере. Откройте бота заново, и приложение само их найдёт.</p></details></div></div>
+</section>
 
+<section class="page" data-id="go-1">
+<div class="text"><p class="count"><span>17 / 17</span><span class="role all">Для всех</span></p>
+<h1>Соберите свой <span class="mark">первый вишлист</span></h1>
+<p class="lead">Откройте бота, нажмите «Запустить», затем «Открыть Whish Helper» и «Создать свой вишлист» — и добавьте первый подарок.</p>
+<a class="cta" href="https://t.me/wishhdesk_bot" target="_blank" rel="noopener">Открыть @wishhdesk_bot</a>
+<p class="note">Это ранняя версия Whish Helper. Если что-то не сработало, сделайте скриншот — и пишите Янчику.</p></div>
+</section>
 </body>
 </html>
