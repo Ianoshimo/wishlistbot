@@ -99,3 +99,14 @@ export function itemDeletedText(i: GiftContext & { split: boolean; paidByGiver: 
     : "";
   return `😔 Получатель удалил подарок ${gift(i)} ${list(i)} - ${what}.${money}`;
 }
+
+// Аудит 2026-10-08, А-32: подпись к фото/видео благодарности - от кого и
+// за какой подарок. У дарителя может быть несколько друзей со списками -
+// без этого непонятно, кто благодарит. Имя получателя дарителю известно
+// (он пришёл по его ссылке), анонимность здесь не нужна - она защищает
+// только дарителя.
+export function thanksCaption(c: { ownerName: string; itemTitle: string | null }): string {
+  const owner = c.ownerName.trim() || "Получатель подарка";
+  const forGift = c.itemTitle?.trim() ? ` за ${quote(c.itemTitle)}` : " за подарок";
+  return `🎁 ${owner} благодарит вас${forGift}!`;
+}

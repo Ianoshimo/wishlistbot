@@ -3,8 +3,9 @@ import { extractUrl } from "../services/linkInput.js";
 import { env } from "../env.js";
 import { db } from "../db.js";
 import { getOrCreateWishlist } from "../services/wishlistService.js";
-import { createItemFromUrl } from "../services/itemCreate.js";
+import { checkItemAddAllowed, createItemFromUrl } from "../services/itemCreate.js";
 import { track } from "../services/analytics.js";
+import { thanksCaption } from "../services/giverMessages.js";
 
 export const bot = new Bot(env.BOT_TOKEN);
 
@@ -52,51 +53,122 @@ bot.command("start", async (ctx) => {
   );
 });
 
+// Аудит 2026-10-08, А-31: подсказка на /help, неизвестную команду и любой
+// текст без ссылки - раньше бот молчал, и казалось, что он сломан.
+export const HELP_TEXT =
+  "Я помогаю вести вишлист и бронировать подарки без задвоений.\n\n" +
+  "• Пришлите ссылку на товар (можно вместе с текстом из «Поделиться» магазина) - предложу добавить её в вишлист.\n" +
+  "• Откройте вишлист кнопкой ниже - там можно поделиться списком с друзьями и посмотреть брони.";
+
+function openAppKeyboard() {
+  return new InlineKeyboard().webApp("Открыть вишлист", env.MINI_APP_URL);
+}
+
+// Меню команд бота (кнопка "Меню" в Telegram). Вызывается при старте
+// сервера; сбой (например, токен-заглушка в разработке) не критичен.
+export async function setupBotCommands(): Promise<void> {
+  try {
+    await bot.api.setMyCommands([
+      { command: "start", description: "Открыть вишлист" },
+      { command: "help", description: "Что умеет бот" },
+    ]);
+  } catch (err) {
+    console.warn("[bot] Не удалось задать меню команд", err instanceof Error ? err.message : err);
+  }
+}
+
+bot.command("help", async (ctx) => {
+  await ctx.reply(HELP_TEXT, { reply_markup: openAppKeyboard() });
+});
+
 // Переслать товарную ссылку боту в чат → бот сам предлагает добавить
 // (CLAUDE.md, 2026-10-01) - без этого приходится открывать мини-апп и
-// вставлять ссылку руками. Одна позиция "в ожидании" на чат - свежая
-// ссылка просто перезаписывает предыдущую, этого достаточно для обычной
-// переписки один на один с ботом (не переживает рестарт процесса, это
-// ожидаемо - переслать можно ещё раз).
-const pendingLinks = new Map<number, string>();
+// вставлять ссылку руками.
+//
+// Аудит 2026-10-08, А-19: раньше ожидающая ссылка была одна на чат, а
+// кнопка - "addlink:yes" без идентификатора: переслал A, потом B, нажал
+// "Добавить" под A - добавлялась B. Теперь у каждой ссылки свой короткий
+// id в callback_data ("addlink:yes:<id>"), кнопка добавляет ровно свою
+// ссылку при любом порядке нажатий. Хранится в памяти процесса (не
+// переживает рестарт - тогда кнопка честно просит прислать ссылку ещё раз),
+// не больше PENDING_LINKS_MAX записей - самые старые вытесняются.
+const PENDING_LINKS_MAX = 1000;
+const pendingLinks = new Map<string, { chatId: number; url: string }>();
+let pendingSeq = 0;
+
+function rememberLink(chatId: number, url: string): string {
+  pendingSeq = (pendingSeq + 1) % 1_000_000_000;
+  const id = `${Date.now().toString(36)}${pendingSeq.toString(36)}`;
+  pendingLinks.set(id, { chatId, url });
+  while (pendingLinks.size > PENDING_LINKS_MAX) {
+    const oldest = pendingLinks.keys().next().value;
+    if (oldest === undefined) break;
+    pendingLinks.delete(oldest);
+  }
+  return id;
+}
 
 bot.on("message:text", async (ctx) => {
   if (ctx.chat.type !== "private") return;
   const text = ctx.message.text;
-  if (text.startsWith("/")) return; // команды (/start и т.п.) - не ссылки
+  // /start и /help обработаны выше; неизвестная команда - подсказка (А-31).
+  if (text.startsWith("/")) {
+    await ctx.reply(HELP_TEXT, { reply_markup: openAppKeyboard() });
+    return;
+  }
 
   // Аудит 2026-10-08, А-10: общий разбор с мини-аппом и API - хвостовая
   // пунктуация ("...https://ozon.ru/t/Ab.") больше не попадает в ссылку.
   const extracted = extractUrl(text);
-  if (!extracted) return;
 
   // Беклог Б-8: та же защита от произвольной схемы, что и в
   // routes/wishlists.ts - ссылка пойдёт прямо в href "Перейти в магазин".
-  let url: URL;
-  try {
-    url = new URL(extracted);
-  } catch {
+  let url: URL | null = null;
+  if (extracted) {
+    try {
+      url = new URL(extracted);
+    } catch {
+      url = null;
+    }
+  }
+  if (!url || (url.protocol !== "http:" && url.protocol !== "https:")) {
+    // А-31: текст без ссылки - подсказка с кнопкой мини-аппа.
+    await ctx.reply(
+      "Чтобы добавить подарок, пришлите ссылку на товар - или откройте вишлист кнопкой ниже.\n\nЧто ещё умею - /help",
+      { reply_markup: openAppKeyboard() },
+    );
     return;
   }
-  if (url.protocol !== "http:" && url.protocol !== "https:") return;
 
-  pendingLinks.set(ctx.chat.id, url.toString());
-  await ctx.reply("Добавить эту ссылку в вишлист?", {
+  const id = rememberLink(ctx.chat.id, url.toString());
+  await ctx.reply(`Добавить эту ссылку в вишлист?\n${url.toString()}`, {
+    link_preview_options: { is_disabled: true },
     reply_markup: new InlineKeyboard()
-      .text("Добавить", "addlink:yes")
-      .text("Не надо", "addlink:no"),
+      .text("Добавить", `addlink:yes:${id}`)
+      .text("Не надо", `addlink:no:${id}`),
   });
 });
 
-bot.callbackQuery(["addlink:yes", "addlink:no"], async (ctx) => {
-  const url = pendingLinks.get(ctx.chat!.id);
-  pendingLinks.delete(ctx.chat!.id);
+bot.callbackQuery(/^addlink:(yes|no)(?::(.+))?$/, async (ctx) => {
+  const [, answer, id] = ctx.match as RegExpMatchArray;
+  const pending = id ? pendingLinks.get(id) : undefined;
+  // Чужой чат (сообщение переслали) - не трогаем чужую ссылку.
+  const own = pending && pending.chatId === ctx.chat?.id ? pending : undefined;
 
-  if (ctx.callbackQuery.data === "addlink:no" || !url) {
+  if (answer === "no") {
+    if (own && id) pendingLinks.delete(id);
     await ctx.answerCallbackQuery();
     await ctx.editMessageText("Хорошо, не добавляю.");
     return;
   }
+  if (!own || !id) {
+    // Старая кнопка (до рестарта сервера или формата без id) - не
+    // угадываем, какую ссылку имели в виду.
+    await ctx.answerCallbackQuery();
+    await ctx.editMessageText("Эта кнопка устарела - пришлите ссылку ещё раз.");
+    return;
+  }
+  pendingLinks.delete(id);
 
   if (!ctx.from) return;
   // Отвечаем на нажатие сразу: подгрузка превью (Wildberries через Apify)
@@ -107,7 +179,17 @@ bot.callbackQuery(["addlink:yes", "addlink:no"], async (ctx) => {
 
   try {
     const wishlist = await getOrCreateWishlist(String(ctx.from.id));
-    const item = await createItemFromUrl(wishlist.id, url, { source: "bot", ownerUserId: wishlist.ownerId });
+    // А-33: те же лимиты, что у мини-аппа.
+    const limit = await checkItemAddAllowed(wishlist.id, wishlist.ownerId);
+    if (limit) {
+      await ctx.editMessageText(
+        limit === "item_limit_reached"
+          ? "В вишлисте уже слишком много подарков - удалите ненужные в мини-аппе и пришлите ссылку снова."
+          : "Слишком много ссылок подряд - подождите минуту и пришлите ещё раз.",
+      );
+      return;
+    }
+    const item = await createItemFromUrl(wishlist.id, own.url, { source: "bot", ownerUserId: wishlist.ownerId });
     await ctx.editMessageText(`Добавлено в вишлист: ${item.title}`);
   } catch (err) {
     console.error("[bot] Не удалось добавить ссылку", err);
@@ -144,8 +226,12 @@ bot.callbackQuery(/^thank:/, async (ctx) => {
 
   pendingThanks.set(ctx.chat.id, itemId);
   await ctx.answerCallbackQuery();
+  // А-32: раньше обещали "не называя вас" - анонимность защищает дарителя,
+  // а не получателя: даритель и так знает, чей это список.
   await ctx.reply(
-    "Пришлите фото или короткое видео (в том числе кружочек) - перешлю дарителю, не называя вас.",
+    `Пришлите фото или короткое видео (в том числе кружочек) - перешлю ${
+      item.maxContributors > 1 ? "всем, кто скинулся на" : "дарителю, который подарил"
+    } ${item.title?.trim() ? `«${item.title.trim()}»` : "этот подарок"}, с подписью, что это благодарность от вас.`,
   );
 });
 
@@ -178,7 +264,10 @@ bot.on(["message:photo", "message:video", "message:video_note"], async (ctx) => 
   }
 
   const givers = await db.user.findMany({ where: { id: { in: giverUserIds } } });
-  const caption = "🎁 Получатель подарка благодарит вас!";
+  // А-32: от кого и за что - у дарителя может быть несколько друзей.
+  // Имя - из самого сообщения (отправитель и есть владелец, проверено
+  // выше): в User.firstName может быть пусто, если владелец не запускал /start.
+  const caption = thanksCaption({ ownerName: ctx.from.first_name || item.wishlist.owner.firstName, itemTitle: item.title });
   let sent = 0;
   for (const giver of givers) {
     const chatId = giver.telegramId.toString();
@@ -190,9 +279,10 @@ bot.on(["message:photo", "message:video", "message:video_note"], async (ctx) => 
         await bot.api.sendVideo(chatId, ctx.message.video.file_id, { caption });
       } else if (ctx.message.video_note) {
         // sendVideoNote (кружочек) не поддерживает caption в самом API -
-        // подпись уходит отдельным сообщением следом.
-        await bot.api.sendVideoNote(chatId, ctx.message.video_note.file_id);
+        // подпись уходит отдельным сообщением ДО кружочка (А-32), чтобы
+        // даритель сразу видел, от кого он.
         await bot.api.sendMessage(chatId, caption);
+        await bot.api.sendVideoNote(chatId, ctx.message.video_note.file_id);
       }
       sent++;
     } catch (err) {

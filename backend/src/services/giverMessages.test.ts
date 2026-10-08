@@ -6,6 +6,7 @@ import {
   giverThanksText,
   itemDeletedText,
   peopleWord,
+  thanksCaption,
   reminderText,
   shareThanksText,
 } from "./giverMessages.js";
@@ -62,4 +63,9 @@ test("удаление: бронь/место сняты, про деньги - 
 
 test("склонение 'человек'", () => {
   assert.deepEqual([1, 2, 5, 11, 22].map(peopleWord), ["человек", "человека", "человек", "человек", "человека"]);
+});
+
+test("А-32: подпись благодарности - имя получателя и название подарка", () => {
+  assert.equal(thanksCaption({ ownerName: "Аня", itemTitle: "Мышка" }), "🎁 Аня благодарит вас за «Мышка»!");
+  assert.equal(thanksCaption({ ownerName: " ", itemTitle: null }), "🎁 Получатель подарка благодарит вас за подарок!");
 });

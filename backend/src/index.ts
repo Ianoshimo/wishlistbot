@@ -4,7 +4,7 @@ import cors from "@fastify/cors";
 import { ZodError } from "zod";
 import { Prisma } from "@prisma/client";
 import { env } from "./env.js";
-import { bot } from "./bot/bot.js";
+import { bot, setupBotCommands } from "./bot/bot.js";
 import { wishlistRoutes } from "./routes/wishlists.js";
 import { itemRoutes } from "./routes/items.js";
 import { calendarRoutes } from "./routes/calendar.js";
@@ -97,6 +97,8 @@ await app.listen({ port: env.PORT, host: "0.0.0.0" });
 bot.start().catch((err) => {
   app.log.error(err, "Бот не запустился - HTTP API продолжает работать");
 });
+// Аудит 2026-10-08, А-31: меню команд (/start, /help).
+void setupBotCommands();
 
 // Аудит 2026-10-08, А-14: напоминания дарителям о брони - планировщик в
 // этом же процессе (на Railway один инстанс), см. services/reminders.ts.
