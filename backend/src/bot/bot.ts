@@ -2,10 +2,11 @@ import { Bot, InlineKeyboard } from "grammy";
 import { extractUrl } from "../services/linkInput.js";
 import { env } from "../env.js";
 import { db } from "../db.js";
-import { getOrCreateWishlist } from "../services/wishlistService.js";
+import { getOrCreateWishlist, listOwnerWishlists } from "../services/wishlistService.js";
 import { checkItemAddAllowed, createItemFromUrl } from "../services/itemCreate.js";
 import { track } from "../services/analytics.js";
 import { thanksCaption } from "../services/giverMessages.js";
+import { APP_NAME } from "../services/brand.js";
 
 export const bot = new Bot(env.BOT_TOKEN);
 
@@ -39,7 +40,7 @@ bot.command("start", async (ctx) => {
   track("bot_started", { userId: user.id, props: { isNewUser: !existed } });
 
   const keyboard = new InlineKeyboard().webApp(
-    "Открыть вишлист-бот",
+    `Открыть ${APP_NAME}`,
     env.MINI_APP_URL,
   );
 
@@ -48,7 +49,7 @@ bot.command("start", async (ctx) => {
   // (см. README.md), первое сообщение бота не должно обещать то, чего
   // негде найти.
   await ctx.reply(
-    "Вишлист-бот - дарите не гадая.\n\nСобирайте вишлист, бронируйте подарки без задвоений.",
+    `${APP_NAME} — дарите не гадая.\n\nСобирайте вишлист, бронируйте подарки без задвоений.`,
     { reply_markup: keyboard },
   );
 });
@@ -57,8 +58,8 @@ bot.command("start", async (ctx) => {
 // текст без ссылки - раньше бот молчал, и казалось, что он сломан.
 export const HELP_TEXT =
   "Я помогаю вести вишлист и бронировать подарки без задвоений.\n\n" +
-  "• Пришлите ссылку на товар (можно вместе с текстом из «Поделиться» магазина) - предложу добавить её в вишлист.\n" +
-  "• Откройте вишлист кнопкой ниже - там можно поделиться списком с друзьями и посмотреть брони.";
+  "• Пришлите ссылку на товар (можно вместе с текстом из «Поделиться» магазина) — предложу добавить её в вишлист.\n" +
+  "• Откройте вишлист кнопкой ниже — там можно поделиться списком с друзьями и посмотреть брони.";
 
 function openAppKeyboard() {
   return new InlineKeyboard().webApp("Открыть вишлист", env.MINI_APP_URL);
@@ -134,23 +135,40 @@ bot.on("message:text", async (ctx) => {
   if (!url || (url.protocol !== "http:" && url.protocol !== "https:")) {
     // А-31: текст без ссылки - подсказка с кнопкой мини-аппа.
     await ctx.reply(
-      "Чтобы добавить подарок, пришлите ссылку на товар - или откройте вишлист кнопкой ниже.\n\nЧто ещё умею - /help",
+      "Чтобы добавить подарок, пришлите ссылку на товар — или откройте вишлист кнопкой ниже.\n\nЧто ещё умею — /help",
       { reply_markup: openAppKeyboard() },
     );
     return;
   }
 
   const id = rememberLink(ctx.chat.id, url.toString());
-  await ctx.reply(`Добавить эту ссылку в вишлист?\n${url.toString()}`, {
+  // Аудит 2026-10-08, А-48: несколько вишлистов (до 3) - сразу спрашиваем
+  // кнопками, в какой добавить; один или ни одного - как раньше, в первый
+  // (создаётся при необходимости).
+  const lists = ctx.from ? await listOwnerWishlists(String(ctx.from.id)) : [];
+  await ctx.reply(addLinkQuestion(url.toString(), lists.length), {
     link_preview_options: { is_disabled: true },
-    reply_markup: new InlineKeyboard()
-      .text("Добавить", `addlink:yes:${id}`)
-      .text("Не надо", `addlink:no:${id}`),
+    reply_markup: addLinkKeyboard(id, lists),
   });
 });
 
-bot.callbackQuery(/^addlink:(yes|no)(?::(.+))?$/, async (ctx) => {
-  const [, answer, id] = ctx.match as RegExpMatchArray;
+export function addLinkQuestion(url: string, listCount: number): string {
+  return listCount > 1 ? `В какой вишлист добавить эту ссылку?\n${url}` : `Добавить эту ссылку в вишлист?\n${url}`;
+}
+
+// callback_data: "addlink:yes:<id ссылки>[:<id вишлиста>]" - до 64 байт
+// (id ссылки ≤ 14 символов, id вишлиста - cuid, 25).
+export function addLinkKeyboard(linkId: string, lists: { id: string; title: string }[]): InlineKeyboard {
+  const kb = new InlineKeyboard();
+  if (lists.length > 1) {
+    for (const w of lists) kb.text(`В «${w.title}»`, `addlink:yes:${linkId}:${w.id}`).row();
+    return kb.text("Не надо", `addlink:no:${linkId}`);
+  }
+  return kb.text("Добавить", `addlink:yes:${linkId}`).text("Не надо", `addlink:no:${linkId}`);
+}
+
+bot.callbackQuery(/^addlink:(yes|no)(?::([^:]+))?(?::([^:]+))?$/, async (ctx) => {
+  const [, answer, id, wishlistId] = ctx.match as RegExpMatchArray;
   const pending = id ? pendingLinks.get(id) : undefined;
   // Чужой чат (сообщение переслали) - не трогаем чужую ссылку.
   const own = pending && pending.chatId === ctx.chat?.id ? pending : undefined;
@@ -165,35 +183,47 @@ bot.callbackQuery(/^addlink:(yes|no)(?::(.+))?$/, async (ctx) => {
     // Старая кнопка (до рестарта сервера или формата без id) - не
     // угадываем, какую ссылку имели в виду.
     await ctx.answerCallbackQuery();
-    await ctx.editMessageText("Эта кнопка устарела - пришлите ссылку ещё раз.");
+    await ctx.editMessageText("Эта кнопка устарела — пришлите ссылку ещё раз.");
     return;
+  }
+  if (!ctx.from) return;
+
+  // А-48: выбранный кнопкой список - только свой (кнопку могли подделать
+  // или список успели удалить); без выбора - первый (самый старый).
+  let wishlist: { id: string; ownerId: string; title: string } | null = null;
+  if (wishlistId) {
+    const lists = await listOwnerWishlists(String(ctx.from.id));
+    wishlist = lists.find((w) => w.id === wishlistId) ?? null;
+    if (!wishlist) {
+      await ctx.answerCallbackQuery({ text: "Этот вишлист недоступен" });
+      return;
+    }
   }
   pendingLinks.delete(id);
 
-  if (!ctx.from) return;
   // Отвечаем на нажатие сразу: подгрузка превью (Wildberries через Apify)
   // идёт до ~30 с, а callback query Telegram протухает раньше - поздний
   // answerCallbackQuery падал с ошибкой.
   await ctx.answerCallbackQuery({ text: "Добавляю…" });
-  await ctx.editMessageText("Добавляю - подтягиваю фото и название…");
+  await ctx.editMessageText("Добавляю — подтягиваю фото и название…");
 
   try {
-    const wishlist = await getOrCreateWishlist(String(ctx.from.id));
+    wishlist ??= await getOrCreateWishlist(String(ctx.from.id));
     // А-33: те же лимиты, что у мини-аппа.
     const limit = await checkItemAddAllowed(wishlist.id, wishlist.ownerId);
     if (limit) {
       await ctx.editMessageText(
         limit === "item_limit_reached"
-          ? "В вишлисте уже слишком много подарков - удалите ненужные в мини-аппе и пришлите ссылку снова."
-          : "Слишком много ссылок подряд - подождите минуту и пришлите ещё раз.",
+          ? "В вишлисте уже слишком много подарков — удалите ненужные в мини-аппе и пришлите ссылку снова."
+          : "Слишком много ссылок подряд — подождите минуту и пришлите ещё раз.",
       );
       return;
     }
     const item = await createItemFromUrl(wishlist.id, own.url, { source: "bot", ownerUserId: wishlist.ownerId });
-    await ctx.editMessageText(`Добавлено в вишлист: ${item.title}`);
+    await ctx.editMessageText(`Добавлено в «${wishlist.title}»: ${item.title}`);
   } catch (err) {
     console.error("[bot] Не удалось добавить ссылку", err);
-    await ctx.editMessageText("Не получилось добавить ссылку - попробуйте ещё раз или добавьте её в мини-аппе.");
+    await ctx.editMessageText("Не получилось добавить ссылку — попробуйте ещё раз или добавьте её в мини-аппе.");
   }
 });
 
@@ -220,7 +250,7 @@ bot.callbackQuery(/^thank:/, async (ctx) => {
     include: { wishlist: { include: { owner: true } } },
   });
   if (!item || item.wishlist.owner.telegramId !== BigInt(ctx.from.id)) {
-    await ctx.answerCallbackQuery({ text: "Эта позиция недоступна" });
+    await ctx.answerCallbackQuery({ text: "Этот подарок недоступен" });
     return;
   }
 
@@ -229,8 +259,8 @@ bot.callbackQuery(/^thank:/, async (ctx) => {
   // А-32: раньше обещали "не называя вас" - анонимность защищает дарителя,
   // а не получателя: даритель и так знает, чей это список.
   await ctx.reply(
-    `Пришлите фото или короткое видео (в том числе кружочек) - перешлю ${
-      item.maxContributors > 1 ? "всем, кто скинулся на" : "дарителю, который подарил"
+    `Пришлите фото или короткое видео (в том числе кружочек) — перешлю ${
+      item.maxContributors > 1 ? "всем, кто участвовал в складчине на" : "дарителю, который подарил"
     } ${item.title?.trim() ? `«${item.title.trim()}»` : "этот подарок"}, с подписью, что это благодарность от вас.`,
   );
 });
@@ -245,7 +275,7 @@ bot.on(["message:photo", "message:video", "message:video_note"], async (ctx) => 
     include: { wishlist: { include: { owner: true } }, giftShares: true },
   });
   if (!ctx.from || !item || item.wishlist.owner.telegramId !== BigInt(ctx.from.id)) {
-    await ctx.reply("Не получилось отправить - позиция недоступна.");
+    await ctx.reply("Не получилось отправить — подарок недоступен.");
     return;
   }
 
@@ -259,7 +289,7 @@ bot.on(["message:photo", "message:video", "message:video_note"], async (ctx) => 
         : [];
 
   if (giverUserIds.length === 0) {
-    await ctx.reply("Не получилось отправить - даритель не найден.");
+    await ctx.reply("Не получилось отправить — даритель не найден.");
     return;
   }
 
@@ -303,6 +333,6 @@ bot.on(["message:photo", "message:video", "message:video_note"], async (ctx) => 
   });
 
   await ctx.reply(
-    givers.length > 1 ? `Спасибо отправлено ${sent} из ${givers.length}! 🎉` : sent > 0 ? "Спасибо отправлено! 🎉" : "Не получилось отправить - попробуйте ещё раз позже.",
+    givers.length > 1 ? `Спасибо отправлено ${sent} из ${givers.length}! 🎉` : sent > 0 ? "Спасибо отправлено! 🎉" : "Не получилось отправить — попробуйте ещё раз позже.",
   );
 });

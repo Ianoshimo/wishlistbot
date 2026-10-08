@@ -80,24 +80,24 @@ export function reminderText(i: ReminderInput): string {
 
 export function giverThanksText(i: GiftContext & { payoutMethod: GiverPayout }): string {
   return i.payoutMethod
-    ? `🎉 Перевод за подарок ${gift(i)} ${list(i)} отмечен - спасибо! Получатель узнает, что деньги отправлены (но не узнает, от кого, если вы не открылись).`
-    : `🎉 Подарок ${gift(i)} ${list(i)} отмечен купленным - спасибо! Получатель узнает, что подарок куплен (но не узнает, кем, если вы не открылись).`;
+    ? `🎉 Перевод за подарок ${gift(i)} ${list(i)} отмечен — спасибо! Получатель узнает, что деньги отправлены (но не узнает, от кого, если вы не открылись).`
+    : `🎉 Подарок ${gift(i)} ${list(i)} отмечен купленным — спасибо! Получатель узнает, что подарок куплен (но не узнает, кем, если вы не открылись).`;
 }
 
 export function shareThanksText(i: GiftContext & { paid: number; total: number }): string {
-  return `🙌 Ваша часть на подарок ${gift(i)} ${list(i)} отмечена - спасибо! Ждём остальных: отметили ${i.paid} из ${i.total}.`;
+  return `🙌 Ваша часть на подарок ${gift(i)} ${list(i)} отмечена — спасибо! Ждём остальных: отметили ${i.paid} из ${i.total}.`;
 }
 
 export function giftCompletedText(i: GiftContext): string {
-  return `🎉 Подарок ${gift(i)} ${list(i)} собран - все участники отметили свою часть. Спасибо!`;
+  return `🎉 Подарок ${gift(i)} ${list(i)} собран — все участники отметили свою часть. Спасибо!`;
 }
 
 export function itemDeletedText(i: GiftContext & { split: boolean; paidByGiver: boolean }): string {
   const what = i.split ? "ваше место в складчине снято" : "ваша бронь снята";
   const money = i.paidByGiver
-    ? "\n\nВы отметили, что уже перевели деньги, - если их нужно вернуть, напишите получателю напрямую."
+    ? "\n\nВы отметили, что уже перевели деньги, — если их нужно вернуть, напишите получателю напрямую."
     : "";
-  return `😔 Получатель удалил подарок ${gift(i)} ${list(i)} - ${what}.${money}`;
+  return `😔 Получатель удалил подарок ${gift(i)} ${list(i)} — ${what}.${money}`;
 }
 
 // Аудит 2026-10-08, А-32: подпись к фото/видео благодарности - от кого и

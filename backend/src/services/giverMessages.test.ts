@@ -43,7 +43,7 @@ test("daysLeft округляет вверх и не уходит в минус"
 });
 
 test("спасибо дарителю: покупка и перевод", () => {
-  assert.match(giverThanksText({ ...ctx, payoutMethod: null }), /отмечен купленным - спасибо/);
+  assert.match(giverThanksText({ ...ctx, payoutMethod: null }), /отмечен купленным — спасибо/);
   assert.match(giverThanksText({ ...ctx, payoutMethod: "sbp" }), /Перевод за подарок «Наушники Sony».*спасибо/);
 });
 
@@ -68,4 +68,12 @@ test("склонение 'человек'", () => {
 test("А-32: подпись благодарности - имя получателя и название подарка", () => {
   assert.equal(thanksCaption({ ownerName: "Аня", itemTitle: "Мышка" }), "🎁 Аня благодарит вас за «Мышка»!");
   assert.equal(thanksCaption({ ownerName: " ", itemTitle: null }), "🎁 Получатель подарка благодарит вас за подарок!");
+});
+
+test("А-41: в текстах бота дарителям - типографское тире, без дефиса между словами", () => {
+  const texts = [
+    giverThanksText({ ...ctx, payoutMethod: null }),
+    giverThanksText({ ...ctx, payoutMethod: "sbp" }),
+  ];
+  for (const t of texts) assert.ok(!/ - /.test(t), t);
 });
