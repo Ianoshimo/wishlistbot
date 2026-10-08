@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import {
   createSafeLookup,
+  decodeHtmlEntities,
+  resolveImageUrl,
   deriveNameFromUrl,
   isPreviewForRequestedProduct,
   isPrivateIp,
@@ -204,4 +206,21 @@ test("createSafeLookup: rebinding - каждый резолв проверяет
   const second = await ask();
   assert.ok(second.err);
   assert.equal((second.err as Error).message, "private_address");
+});
+
+test("А-46: HTML-сущности в названии раскодируются полностью", () => {
+  assert.equal(decodeHtmlEntities("Кружка &quot;Кот&quot; &amp; блюдце"), 'Кружка "Кот" & блюдце');
+  assert.equal(decodeHtmlEntities("Kid&#39;s toy&nbsp;set &#x2014; &laquo;new&raquo;"), "Kid's toy set — «new»");
+  assert.equal(decodeHtmlEntities("&#169; Ozon &hellip;"), "© Ozon …");
+  // Неизвестная сущность и управляющий символ - не трогаем.
+  assert.equal(decodeHtmlEntities("&foo; &#7;"), "&foo; &#7;");
+});
+
+test("А-46: относительный og:image разрешается от адреса страницы", () => {
+  assert.equal(resolveImageUrl("/img/1.jpg", "https://shop.ru/p/123?x=1"), "https://shop.ru/img/1.jpg");
+  assert.equal(resolveImageUrl("//cdn.shop.ru/a.jpg", "https://shop.ru/p/1"), "https://cdn.shop.ru/a.jpg");
+  assert.equal(resolveImageUrl("img/2.png", "https://shop.ru/p/1/"), "https://shop.ru/p/1/img/2.png");
+  assert.equal(resolveImageUrl("https://x.ru/a.jpg", "https://shop.ru/"), "https://x.ru/a.jpg");
+  assert.equal(resolveImageUrl("javascript:alert(1)", "https://shop.ru/"), null);
+  assert.equal(resolveImageUrl(null, "https://shop.ru/"), null);
 });

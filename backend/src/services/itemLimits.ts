@@ -50,3 +50,13 @@ export class SlidingLimiter {
 }
 
 export const itemAddLimiter = new SlidingLimiter(ADDS_PER_MINUTE, ADDS_PER_DAY);
+
+// Аудит 2026-10-08, А-37: потолок длины названия подарка. Вручную длиннее
+// не сохранить (400 title_too_long), название из превью магазина (бывают
+// простыни с характеристиками) - обрезается до этой длины с многоточием.
+export const ITEM_TITLE_MAX = 120;
+
+export function clampItemTitle(title: string): string {
+  const t = title.replace(/\s+/g, " ").trim();
+  return t.length <= ITEM_TITLE_MAX ? t : `${t.slice(0, ITEM_TITLE_MAX - 1).trimEnd()}…`;
+}

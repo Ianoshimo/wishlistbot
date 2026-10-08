@@ -3,7 +3,7 @@ import { deriveNameFromUrl, detectStore, fetchLinkPreview } from "./linkPreview.
 import { fetchWildberriesViaApify, isWildberriesUrl } from "./wildberriesApify.js";
 import { payoutProp, track, type ItemSource } from "./analytics.js";
 import type { PayoutMethod } from "./itemEdit.js";
-import { ITEMS_PER_WISHLIST, itemAddLimiter } from "./itemLimits.js";
+import { ITEMS_PER_WISHLIST, clampItemTitle, itemAddLimiter } from "./itemLimits.js";
 import { PreviewCache } from "./previewCache.js";
 
 // Аудит 2026-10-08, А-33: кэш превью по URL - повторная ссылка (тот же
@@ -85,10 +85,11 @@ export async function createItemFromUrl(wishlistId: string, url: string, opts: C
       sbpPhone: opts.sbpPhone ?? null,
       sbpBank: opts.sbpBank ?? null,
       fundraiserUrl: opts.fundraiserUrl ?? null,
-      title:
-        opts.title ??
-        preview.title ??
-        (isDirectImage ? "Фото по ссылке" : deriveNameFromUrl(url)),
+      // А-37: вручную заданное название уже проверено схемой роута,
+      // превью/имя из адреса - обрезаем до ITEM_TITLE_MAX.
+      title: clampItemTitle(
+        opts.title ?? preview.title ?? (isDirectImage ? "Фото по ссылке" : deriveNameFromUrl(url)),
+      ),
       imageUrl: preview.imageUrl ?? undefined,
     },
   });

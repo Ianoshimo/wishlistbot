@@ -1,6 +1,6 @@
 import type { GiftShare, Item, User } from "@prisma/client";
 import { db } from "../db.js";
-import { giftShareDeadline, resolveExpiredReservation } from "./reservation.js";
+import { RESERVATION_TTL_DAYS, giftShareDeadline, resolveExpiredReservation } from "./reservation.js";
 import { detectStore } from "./linkPreview.js";
 
 type GiftShareWithUser = GiftShare & { user: User };
@@ -34,6 +34,40 @@ export async function resolveItem(
       ? await db.giftShare.findMany({ where: { itemId }, include: { user: true } })
       : [];
   return { ...item, giftShares };
+}
+
+// Аудит 2026-10-08, А-47: открытие вишлиста раньше звало resolveItem на
+// каждую позицию - чтение, возможная запись, отдельная выборка долей: на
+// 50 позиций 46-66 SQL-запросов, и число росло с размером списка. Теперь -
+// пакетом на весь вишлист, число запросов постоянное: просроченные брони
+// снимаются одним updateMany, просроченные неоплаченные доли складчины -
+// одним deleteMany, позиции с дарителями и долями - одной выборкой с include.
+// Правила те же, что у resolveExpiredReservation/resolveExpiredGiftShares.
+export async function resolveWishlistItems(
+  wishlistId: string,
+  now: Date = new Date(),
+): Promise<(ItemWithReservedBy & { giftShares: GiftShareWithUser[] })[]> {
+  await db.item.updateMany({
+    where: { wishlistId, status: "reserved", reservationTtl: { lt: now } },
+    data: { status: "available", reservedByUserId: null, reservedAt: null, reservationTtl: null, lastReminderAt: null },
+  });
+  const cutoff = new Date(now);
+  cutoff.setDate(cutoff.getDate() - RESERVATION_TTL_DAYS);
+  await db.giftShare.deleteMany({
+    where: {
+      paid: false,
+      createdAt: { lt: cutoff },
+      item: { wishlistId, maxContributors: { gt: 1 }, status: { not: "bought" } },
+    },
+  });
+  const items = await db.item.findMany({
+    where: { wishlistId },
+    // Беклог Н-8: явный порядок - по дате создания.
+    orderBy: { createdAt: "asc" },
+    include: { reservedBy: true, giftShares: { include: { user: true } } },
+  });
+  // Как resolveItem: у позиций без складчины долей нет.
+  return items.map((i) => ({ ...i, giftShares: i.maxContributors > 1 ? i.giftShares : [] }));
 }
 
 function giverLabel(user: User): string {

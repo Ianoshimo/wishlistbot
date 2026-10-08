@@ -9,11 +9,12 @@ import { resolveTelegramId, resolveTelegramUser, telegramIdSchema } from "../aut
 import { upsertUserByTelegramId } from "../services/userUpsert.js";
 import { monthDay, payoutProp, track, type ReserveMode } from "../services/analytics.js";
 import { detectStore } from "../services/linkPreview.js";
-import { BANK_RE, MAX_CONTRIBUTORS_CAP, phoneSchema, priceSchema } from "./wishlists.js";
+import { BANK_RE, MAX_CONTRIBUTORS_CAP, itemTitleSchema, phoneSchema, priceSchema } from "./wishlists.js";
 import { planItemEdit } from "../services/itemEdit.js";
 import { miniAppUrl, sendToUser } from "../bot/notify.js";
 import { giftCompletedText, giverThanksText, shareThanksText } from "../services/giverMessages.js";
 import { checkItemAddAllowed, fetchPreviewWithFallback } from "../services/itemCreate.js";
+import { clampItemTitle } from "../services/itemLimits.js";
 import { purchaseNoticeText } from "../services/purchaseNotice.js";
 
 // Аналитика: "позиция стала bought" - с датой повода вишлиста (месяц-день),
@@ -391,7 +392,7 @@ export async function itemRoutes(app: FastifyInstance) {
     const body = z
       .object({
         telegramId: z.string().optional(),
-        title: z.string().min(1).optional(),
+        title: itemTitleSchema,
         price: priceSchema.nullable().optional(),
         url: z.preprocess(preprocessUrlInput, z.string().url().regex(/^https?:\/\//i, "invalid_url_scheme")).optional(),
         // ТЗ блок 4, п.3: число участников складчины меняется и после создания.
@@ -486,7 +487,7 @@ export async function itemRoutes(app: FastifyInstance) {
       const target = body.url ?? current.url;
       const preview = await fetchPreviewWithFallback(target);
       imageUrl = preview.imageUrl ?? null;
-      if (body.title === undefined && preview.title) previewTitle = preview.title;
+      if (body.title === undefined && preview.title) previewTitle = clampItemTitle(preview.title);
     }
 
     await db.item.update({

@@ -3,9 +3,10 @@ import { occasionCategory } from "../services/occasionCategory.js";
 import { preprocessUrlInput } from "../services/linkInput.js";
 import { z } from "zod";
 import { db } from "../db.js";
-import { resolveItem, serializeItemView } from "../services/itemView.js";
+import { resolveWishlistItems, serializeItemView } from "../services/itemView.js";
 import { resolveExpiredReservation } from "../services/reservation.js";
 import { checkItemAddAllowed, createItemFromUrl } from "../services/itemCreate.js";
+import { ITEM_TITLE_MAX } from "../services/itemLimits.js";
 import { EMPTY_ITEM, planItemEdit } from "../services/itemEdit.js";
 import { itemDeletedText } from "../services/giverMessages.js";
 import { miniAppUrl, sendToUser } from "../bot/notify.js";
@@ -52,6 +53,14 @@ export const priceSchema = z.number().int().positive().max(MAX_PRICE_KOPECKS, "p
 export const BANK_RE = /^\S.{0,39}$/s;
 // ТЗ блок 4: складчина до 100 участников (раньше 10).
 export const MAX_CONTRIBUTORS_CAP = 100;
+// Аудит 2026-10-08, А-37: название подарка - trim, пустое после trim
+// считается "не задано" (при создании берётся название из превью, при
+// правке поле не меняется), не длиннее ITEM_TITLE_MAX - иначе 400
+// title_too_long. Раньше "     " и 3000 символов сохранялись как есть.
+export const itemTitleSchema = z.preprocess(
+  (v) => (typeof v === "string" ? v.trim() || undefined : v),
+  z.string().max(ITEM_TITLE_MAX, "title_too_long").optional(),
+);
 // "Сделай 3 и названия для них" (CLAUDE.md, 2026-10-02) - продуктовый
 // лимит, не структурное ограничение БД (специально не уникальный
 // индекс/constraint - проще поднять позже, если понадобится). Раньше
@@ -161,13 +170,8 @@ export async function wishlistRoutes(app: FastifyInstance) {
     const { slug } = z.object({ slug: z.string() }).parse(req.params);
     const query = z.object({ telegramId: z.string().optional() }).parse(req.query);
 
-    // Беклог Н-8: без явного orderBy Postgres не гарантирует порядок
-    // строк - список позиций мог отображаться в разном порядке между
-    // запросами к одной и той же странице.
-    const wishlist = await db.wishlist.findUnique({
-      where: { slug },
-      include: { items: { orderBy: { createdAt: "asc" } }, owner: true },
-    });
+    // Беклог Н-8 (явный порядок позиций) - теперь в resolveWishlistItems.
+    const wishlist = await db.wishlist.findUnique({ where: { slug }, include: { owner: true } });
     if (!wishlist) return reply.code(404).send({ error: "wishlist_not_found" });
 
     // Беклог В-10: получатель, открывший свою же ссылку "Поделиться",
@@ -181,9 +185,8 @@ export async function wishlistRoutes(app: FastifyInstance) {
     // сравнить с reservedByUserId каждой позиции (сам id наружу не идёт).
     const viewer = telegramId ? await db.user.findUnique({ where: { telegramId: BigInt(telegramId) } }) : null;
 
-    const items = await Promise.all(
-      wishlist.items.map((i) => resolveItem(i.id)),
-    );
+    // А-47: позиции пакетом, без запросов на каждую (services/itemView.ts).
+    const items = await resolveWishlistItems(wishlist.id);
 
     // Аналитика: открытие чужого вишлиста - сигнал "поделился и открыли
     // дарители" в воронке. Не чаще раза в сутки на зрителя+вишлист, чтобы
@@ -193,7 +196,7 @@ export async function wishlistRoutes(app: FastifyInstance) {
       track("wishlist_viewed", {
         userId: viewer?.id ?? null,
         wishlistId: wishlist.id,
-        props: { anonymous: !telegramId, registered: Boolean(viewer), itemCount: wishlist.items.length },
+        props: { anonymous: !telegramId, registered: Boolean(viewer), itemCount: items.length },
         dedupeKey: dailyKey("wishlist_viewed", wishlist.id, viewerKey(viewer?.id, telegramId)),
       });
     }
@@ -331,7 +334,7 @@ export async function wishlistRoutes(app: FastifyInstance) {
         // Аудит 2026-10-08, А-10: текст из "Поделиться" маркетплейса
         // ("Смотри на Ozon https://...") - вырезаем первую ссылку.
         url: z.preprocess(preprocessUrlInput, z.string().url().regex(/^https?:\/\//i, "invalid_url_scheme")),
-        title: z.string().optional(),
+        title: itemTitleSchema,
         price: priceSchema.optional(), // копейки
         // "Уже купил(а) сам(а)" - с аудита 2026-10-08 (А-5) только
         // информация "в магазин идти не нужно"; деньги - payoutMethod.

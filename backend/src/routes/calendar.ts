@@ -4,6 +4,7 @@ import { db } from "../db.js";
 import { buildIcsCalendar } from "../services/ics.js";
 import { env } from "../env.js";
 import { dailyKey, track } from "../services/analytics.js";
+import { APP_NAME } from "../services/brand.js";
 
 // Личная подписка-агрегат на поводы (CLAUDE.md, 2026-10-02, "продумай
 // бизнесово как пользователю будет удобно синхронизировать календари") -
@@ -44,10 +45,12 @@ export async function calendarRoutes(app: FastifyInstance) {
     const ics = buildIcsCalendar(
       wishlists.map((w) => ({
         uid: `occasion-${w.id}`,
-        title: w.occasionTitle ?? "Повод в Вишлист-боте",
+        title: w.occasionTitle ?? "Повод",
         date: w.occasionDate as Date,
         url: `https://t.me/${env.BOT_USERNAME}?startapp=w_${w.slug}`,
       })),
+      // А-45: имя подписки в списке календарей.
+      { name: `${APP_NAME} — поводы друзей` },
     );
 
     // Аналитика: календарь опрашивает фид периодически - одно событие на
@@ -94,7 +97,7 @@ function esc(s: string): string {
 function subscribePage(urls: { https: string; webcal: string } | null): string {
   const body = urls
     ? `<h1>Подписка на поводы</h1>
-<p>Один раз подпишитесь - дни рождения и другие поводы тех, кому вы дарите, будут появляться в календаре сами, с напоминанием за 3 дня.</p>
+<p>Один раз подпишитесь — дни рождения и другие поводы тех, кому вы дарите, будут появляться в календаре сами, с напоминанием за 3 дня.</p>
 <a class="btn primary" href="${esc(urls.webcal)}">Подписаться в Календаре</a>
 <p class="hint">iPhone, iPad, Mac: нажмите кнопку и подтвердите «Подписаться».</p>
 <a class="btn" href="https://calendar.google.com/calendar/r?cid=${esc(encodeURIComponent(urls.webcal))}">Подписаться в Google Календаре</a>
@@ -104,7 +107,7 @@ function subscribePage(urls: { https: string; webcal: string } | null): string {
 <input readonly value="${esc(urls.https)}" onclick="this.select()">`
     : `<h1>Ссылка устарела</h1><p>Откройте «Повод и календарь» в мини-аппе ещё раз.</p>`;
   return `<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex"><title>Подписка на календарь</title>
+<meta name="robots" content="noindex"><title>Подписка на календарь · ${APP_NAME}</title>
 <style>
 :root{--bg:#f5f4fb;--surface:#fff;--text:#1b1730;--muted:#6b648c;--accent:#4d3e99;--on-accent:#fff;--border:#e3dff2}
 @media (prefers-color-scheme:dark){:root{--bg:#15111f;--surface:#211a35;--text:#f2f0fa;--muted:#b0a9c9;--accent:#8a7ae0;--on-accent:#15111f;--border:rgba(242,240,250,.12)}}

@@ -222,6 +222,63 @@ export function detectStore(rawUrl: string): string | null {
   }
 }
 
+// Аудит 2026-10-08, А-46: раньше раскодировались только &amp; - &quot;,
+// &#39;, &nbsp;, &laquo; и числовые сущности попадали в название как есть
+// ("Кружка &quot;Кот&quot;"). Полный набор нужных на практике именованных
+// сущностей + любые числовые (&#NNN; / &#xHH;). Неизвестная сущность
+// остаётся как была.
+const NAMED_ENTITIES: Record<string, string> = {
+  amp: "&",
+  quot: '"',
+  apos: "'",
+  lt: "<",
+  gt: ">",
+  nbsp: " ",
+  laquo: "«",
+  raquo: "»",
+  ldquo: "“",
+  rdquo: "”",
+  bdquo: "„",
+  lsquo: "‘",
+  rsquo: "’",
+  mdash: "—",
+  ndash: "–",
+  hellip: "…",
+  minus: "−",
+  times: "×",
+  copy: "©",
+  reg: "®",
+  trade: "™",
+  deg: "°",
+  middot: "·",
+};
+
+export function decodeHtmlEntities(s: string): string {
+  return s.replace(/&(#\d{1,7}|#x[0-9a-f]{1,6}|[a-z]{2,8});/gi, (whole, body: string) => {
+    if (body[0] === "#") {
+      const code = body[1] === "x" || body[1] === "X" ? parseInt(body.slice(2), 16) : parseInt(body.slice(1), 10);
+      // Управляющие символы и недопустимые коды - не вставляем.
+      if (!Number.isFinite(code) || code < 32 || code > 0x10ffff || (code >= 0xd800 && code <= 0xdfff)) return whole;
+      return String.fromCodePoint(code === 160 ? 32 : code);
+    }
+    return NAMED_ENTITIES[body.toLowerCase()] ?? whole;
+  });
+}
+
+// А-46: og:image бывает относительным ("/img/1.jpg") или без схемы
+// ("//cdn.shop.ru/1.jpg") - раньше сохранялся как есть, и картинка в
+// мини-аппе была битой (адрес считался от домена мини-аппа). Разрешаем
+// относительно адреса страницы, после редиректов; не http(s) - не берём.
+export function resolveImageUrl(raw: string | null, pageUrl: string): string | null {
+  if (!raw) return null;
+  try {
+    const u = new URL(raw.trim(), pageUrl);
+    return u.protocol === "http:" || u.protocol === "https:" ? u.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
 function extractMeta(html: string, property: string): string | null {
   // Обычный вид: <meta property="og:image" content="..."> (порядок
   // атрибутов и кавычки могут отличаться).
@@ -238,7 +295,7 @@ function extractMeta(html: string, property: string): string | null {
   const json = new RegExp(`"${property}"\\s*,\\s*"content"\\s*:\\s*"([^"]+)"`, "i");
 
   const match = html.match(plain) ?? html.match(plainReverse) ?? html.match(json);
-  return match ? match[1].replace(/\\u0026/g, "&").replace(/&amp;/g, "&") : null;
+  return match ? decodeHtmlEntities(match[1].replace(/\\u0026/g, "&")).trim() || null : null;
 }
 
 // Н-6 (техдолг с QA 2026-10-01, разобран 2026-10-07). Яндекс.Маркет
@@ -370,7 +427,7 @@ export async function fetchLinkPreview(rawUrl: string): Promise<LinkPreview> {
 
     const html = await res.text();
     if (!isPreviewForRequestedProduct(url.toString(), res.url, html)) return EMPTY;
-    const imageUrl = extractMeta(html, "og:image");
+    const imageUrl = resolveImageUrl(extractMeta(html, "og:image"), res.url || url.toString());
     const rawTitle = extractMeta(html, "og:title");
     return { title: rawTitle ? shortenTitle(rawTitle) : null, imageUrl };
   } catch {

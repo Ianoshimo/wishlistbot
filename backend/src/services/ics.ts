@@ -1,3 +1,5 @@
+import { APP_NAME } from "./brand.js";
+
 // Построение .ics (CLAUDE.md, 2026-10-02) - общая логика для двух мест:
 // разового события по конкретному вишлисту (routes/wishlists.ts,
 // "Добавить в календарь" на экране дарителя) и личной подписки-агрегата
@@ -32,6 +34,34 @@ function escapeIcsText(s: string): string {
   return s.replace(/\\/g, "\\\\").replace(/,/g, "\\,").replace(/;/g, "\\;").replace(/\n/g, "\\n");
 }
 
+// Аудит 2026-10-08, А-45: RFC 5545 §3.1 - строка не длиннее 75 октетов,
+// длиннее - переносится CRLF + пробел. Считаем именно байты UTF-8 (русская
+// буква - 2 октета, эмодзи - 4) и не режем символ посередине: SUMMARY повода
+// на русском легко выходит за 75 октетов, строгие парсеры такое отвергают.
+export const ICS_LINE_OCTETS = 75;
+
+export function foldIcsLine(line: string): string {
+  if (Buffer.byteLength(line, "utf8") <= ICS_LINE_OCTETS) return line;
+  const out: string[] = [];
+  let current = "";
+  let bytes = 0;
+  // Первая строка - до 75 октетов, продолжения - пробел + до 74.
+  let limit = ICS_LINE_OCTETS;
+  for (const ch of line) {
+    const b = Buffer.byteLength(ch, "utf8");
+    if (bytes + b > limit) {
+      out.push(current);
+      current = "";
+      bytes = 0;
+      limit = ICS_LINE_OCTETS - 1;
+    }
+    current += ch;
+    bytes += b;
+  }
+  out.push(current);
+  return out.join("\r\n ");
+}
+
 export interface OccasionEvent {
   uid: string;
   title: string;
@@ -54,21 +84,19 @@ function buildEvent(event: OccasionEvent): string {
   lines.push(
     "BEGIN:VALARM",
     "ACTION:DISPLAY",
-    "DESCRIPTION:Повод скоро - загляните в вишлист",
+    "DESCRIPTION:Повод скоро — загляните в вишлист",
     "TRIGGER:-P3D",
     "END:VALARM",
     "END:VEVENT",
   );
-  return lines.join("\r\n");
+  return lines.map(foldIcsLine).join("\r\n");
 }
 
-export function buildIcsCalendar(events: OccasionEvent[]): string {
-  return [
-    "BEGIN:VCALENDAR",
-    "VERSION:2.0",
-    "PRODID:-//wishlistbot//ru",
-    "CALSCALE:GREGORIAN",
-    ...events.map(buildEvent),
-    "END:VCALENDAR",
-  ].join("\r\n");
+// А-45: name - имя календаря-подписки (X-WR-CALNAME понимают Apple, Google,
+// Outlook, Яндекс) - иначе подписка в списке календарей называлась адресом.
+// Завершающий CRLF - по RFC 5545 каждая строка, включая последнюю.
+export function buildIcsCalendar(events: OccasionEvent[], opts: { name?: string } = {}): string {
+  const head = ["BEGIN:VCALENDAR", "VERSION:2.0", `PRODID:-//${APP_NAME}//RU`, "CALSCALE:GREGORIAN"];
+  if (opts.name) head.push("METHOD:PUBLISH", `X-WR-CALNAME:${escapeIcsText(opts.name)}`);
+  return [...head.map(foldIcsLine), ...events.map(buildEvent), "END:VCALENDAR"].join("\r\n") + "\r\n";
 }
