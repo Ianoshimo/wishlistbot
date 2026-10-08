@@ -3,23 +3,51 @@ import { deriveNameFromUrl, detectStore, fetchLinkPreview } from "./linkPreview.
 import { fetchWildberriesViaApify, isWildberriesUrl } from "./wildberriesApify.js";
 import { payoutProp, track, type ItemSource } from "./analytics.js";
 import type { PayoutMethod } from "./itemEdit.js";
+import { ITEMS_PER_WISHLIST, itemAddLimiter } from "./itemLimits.js";
+import { PreviewCache } from "./previewCache.js";
+
+// Аудит 2026-10-08, А-33: кэш превью по URL - повторная ссылка (тот же
+// товар в другом вишлисте, повторное "обновить фото") не дёргает магазин и
+// платный Apify заново. См. services/previewCache.ts.
+const previewCache = new PreviewCache();
 
 // Превью товара (фото/название) - свой парсинг, для Wildberries платный
 // фоллбэк через Apify. Общая для создания позиции и для "Обновить фото по
 // ссылке" при редактировании (ТЗ редактирования всех полей).
 export async function fetchPreviewWithFallback(url: string) {
+  const cached = previewCache.get(url);
+  if (cached) return cached;
   let preview = await fetchLinkPreview(url);
+  let paid = false;
   if (!preview.title && !preview.imageUrl) {
     try {
       const parsed = new URL(url);
       if (isWildberriesUrl(parsed)) {
+        paid = true;
         preview = await fetchWildberriesViaApify(url);
       }
     } catch {
       // невалидный URL отсеивается до вызова этой функции
     }
   }
+  previewCache.set(url, preview, paid);
   return preview;
+}
+
+// А-33: можно ли пользователю добавить позицию в этот вишлист прямо сейчас
+// (или обновить фото по ссылке - countsItems=false). null - можно, иначе
+// код ошибки для ответа: item_limit_reached (409) / too_many_requests (429).
+export async function checkItemAddAllowed(
+  wishlistId: string,
+  userId: string,
+  countsItems = true,
+): Promise<"item_limit_reached" | "too_many_requests" | null> {
+  if (countsItems) {
+    const count = await db.item.count({ where: { wishlistId } });
+    if (count >= ITEMS_PER_WISHLIST) return "item_limit_reached";
+  }
+  if (!itemAddLimiter.take(userId)) return "too_many_requests";
+  return null;
 }
 
 // Создание позиции по ссылке (подгрузка фото/названия) - вынесено из

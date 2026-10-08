@@ -9,11 +9,11 @@ import { resolveTelegramId, resolveTelegramUser, telegramIdSchema } from "../aut
 import { upsertUserByTelegramId } from "../services/userUpsert.js";
 import { monthDay, payoutProp, track, type ReserveMode } from "../services/analytics.js";
 import { detectStore } from "../services/linkPreview.js";
-import { BANK_RE, MAX_CONTRIBUTORS_CAP, PHONE_RE } from "./wishlists.js";
+import { BANK_RE, MAX_CONTRIBUTORS_CAP, phoneSchema, priceSchema } from "./wishlists.js";
 import { planItemEdit } from "../services/itemEdit.js";
 import { miniAppUrl, sendToUser } from "../bot/notify.js";
 import { giftCompletedText, giverThanksText, shareThanksText } from "../services/giverMessages.js";
-import { fetchPreviewWithFallback } from "../services/itemCreate.js";
+import { checkItemAddAllowed, fetchPreviewWithFallback } from "../services/itemCreate.js";
 import { purchaseNoticeText } from "../services/purchaseNotice.js";
 
 // Аналитика: "позиция стала bought" - с датой повода вишлиста (месяц-день),
@@ -392,7 +392,7 @@ export async function itemRoutes(app: FastifyInstance) {
       .object({
         telegramId: z.string().optional(),
         title: z.string().min(1).optional(),
-        price: z.number().int().positive().nullable().optional(),
+        price: priceSchema.nullable().optional(),
         url: z.preprocess(preprocessUrlInput, z.string().url().regex(/^https?:\/\//i, "invalid_url_scheme")).optional(),
         // ТЗ блок 4, п.3: число участников складчины меняется и после создания.
         maxContributors: z.number().int().min(1).max(MAX_CONTRIBUTORS_CAP).optional(),
@@ -400,7 +400,7 @@ export async function itemRoutes(app: FastifyInstance) {
         // и реквизиты этого подарка. Правила - services/itemEdit.ts.
         payoutMethod: z.enum(["sbp", "fundraiser"]).nullable().optional(),
         fundraiserUrl: z.preprocess(preprocessUrlInput, z.string().url().regex(/^https?:\/\//i, "invalid_url_scheme")).optional(),
-        sbpPhone: z.string().regex(PHONE_RE, "invalid_phone").optional(),
+        sbpPhone: phoneSchema.optional(),
         sbpBank: z.string().regex(BANK_RE, "invalid_bank").optional(),
         // "Уже купил сам" - с А-5 только информация "в магазин не нужно".
         selfPurchased: z.boolean().optional(),
@@ -463,6 +463,13 @@ export async function itemRoutes(app: FastifyInstance) {
         },
       });
       return reply.code(plan.code).send(plan.joined !== undefined ? { error: plan.error, joined: plan.joined } : { error: plan.error });
+    }
+
+    // Аудит 2026-10-08, А-33: "обновить фото по ссылке" - тот же запрос к
+    // магазину/Apify, что и добавление, считается в тот же лимит частоты.
+    if (body.refreshPreview) {
+      const limit = await checkItemAddAllowed(owned.wishlistId, owned.wishlist.ownerId, false);
+      if (limit) return reply.code(429).send({ error: limit });
     }
 
     // Последние введённые реквизиты - по умолчанию для следующих подарков

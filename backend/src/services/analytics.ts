@@ -64,6 +64,9 @@ export interface EventProps {
   // Личная webcal-подписка опрошена календарём - одно событие на
   // пользователя в сутки (календари дёргают фид периодически).
   calendar_feed_fetched: { occasionCount: number };
+  // Аудит 2026-10-08, А-22: открыта страница оформления подписки на
+  // календарь (из мини-аппа внутри Telegram).
+  calendar_subscribe_page_opened: Record<string, never>;
   // Получатель отправил благодарность (фото/видео) дарителю(ям) через бота.
   thanks_sent: { mediaType: "photo" | "video" | "video_note"; recipients: number; delivered: number };
   // ТЗ блок 4 (2026-10-07): логи "всего и вся".
@@ -110,6 +113,7 @@ export const EVENT_TYPES = [
   "wishlist_viewed",
   "occasion_ics_downloaded",
   "calendar_feed_fetched",
+  "calendar_subscribe_page_opened",
   "thanks_sent",
   "item_edited",
   "item_edit_blocked",

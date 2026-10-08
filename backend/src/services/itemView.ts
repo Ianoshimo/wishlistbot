@@ -62,6 +62,11 @@ export function serializeItemView(
   let paidByMe: boolean;
   let contributorsCount: number;
   let giverNames: string[];
+  // Аудит 2026-10-08, А-20: сколько участников складчины отметили перевод -
+  // только владельцу (сверить поступления в банке), без личностей. Даритель
+  // видит лишь общий прогресс "участвуют X из N". null - не владелец или
+  // не складчина.
+  let paidCount: number | null = null;
   // Когда снимется бронь/доля зрителя, если он не отметит покупку/перевод
   // - только самому держателю, остальным null.
   let reservationExpiresAt: Date | null = null;
@@ -75,6 +80,7 @@ export function serializeItemView(
     giverNames = isOwnerViewer
       ? giftShares.filter((s) => s.visible).map((s) => giverLabel(s.user))
       : [];
+    if (isOwnerViewer) paidCount = giftShares.filter((s) => s.paid).length;
   } else {
     contributorsCount = item.reservedByUserId ? 1 : 0;
     reservedByMe = Boolean(viewerUserId && item.reservedByUserId === viewerUserId);
@@ -115,6 +121,7 @@ export function serializeItemView(
     store: detectStore(item.url),
     maxContributors: item.maxContributors,
     contributorsCount,
+    paidCount,
     paidByMe,
     reservationExpiresAt,
     giverNames,

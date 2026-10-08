@@ -5,7 +5,7 @@ import { z } from "zod";
 import { db } from "../db.js";
 import { resolveItem, serializeItemView } from "../services/itemView.js";
 import { resolveExpiredReservation } from "../services/reservation.js";
-import { createItemFromUrl } from "../services/itemCreate.js";
+import { checkItemAddAllowed, createItemFromUrl } from "../services/itemCreate.js";
 import { EMPTY_ITEM, planItemEdit } from "../services/itemEdit.js";
 import { itemDeletedText } from "../services/giverMessages.js";
 import { miniAppUrl, sendToUser } from "../bot/notify.js";
@@ -14,6 +14,7 @@ import { resolveTelegramId } from "../auth/telegramAuth.js";
 import { upsertUserByTelegramId } from "../services/userUpsert.js";
 import { buildIcsCalendar, toCalendarDay } from "../services/ics.js";
 import { env } from "../env.js";
+import { normalizePhone } from "../services/phone.js";
 import { dailyKey, monthDay, track, viewerKey } from "../services/analytics.js";
 
 // Привязка логина через Telegram (2026-10-02): telegramId больше не
@@ -29,7 +30,23 @@ function requireTelegramId(req: FastifyRequest, bodyTelegramId: string | undefin
 // ссылке без отдельной регистрации, личность дарителя не раскрывается
 // нигде в ответах (см. services/itemView.ts serializeItemView).
 
-export const PHONE_RE = /^[\d\s()+-]{10,20}$/;
+// Аудит 2026-10-08, А-18: номер нормализуется к +7XXXXXXXXXX (services/
+// phone.ts) - то же правило, что на фронте; ошибка - конкретный код
+// invalid_phone (index.ts отдаёт его как error).
+export const phoneSchema = z.string().transform((s, ctx) => {
+  const phone = normalizePhone(s);
+  if (!phone) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "invalid_phone" });
+    return z.NEVER;
+  }
+  return phone;
+});
+// Аудит 2026-10-08, А-17: Item.price - int4 в копейках, всё больше
+// 2 147 483 647 падало 500 из Postgres. Потолок 20 млн ₽ - с запасом до
+// предела int4 и выше любой реальной цены подарка; больше - 400
+// price_too_large с понятным текстом на фронте.
+export const MAX_PRICE_KOPECKS = 2_000_000_000;
+export const priceSchema = z.number().int().positive().max(MAX_PRICE_KOPECKS, "price_too_large");
 // Аудит 2026-10-08, А-5: банк получателя для СБП - свободный текст
 // ("Т-Банк", "Сбербанк"), дарителю нужен, чтобы выбрать банк в переводе.
 export const BANK_RE = /^\S.{0,39}$/s;
@@ -315,7 +332,7 @@ export async function wishlistRoutes(app: FastifyInstance) {
         // ("Смотри на Ozon https://...") - вырезаем первую ссылку.
         url: z.preprocess(preprocessUrlInput, z.string().url().regex(/^https?:\/\//i, "invalid_url_scheme")),
         title: z.string().optional(),
-        price: z.number().int().positive().optional(), // копейки
+        price: priceSchema.optional(), // копейки
         // "Уже купил(а) сам(а)" - с аудита 2026-10-08 (А-5) только
         // информация "в магазин идти не нужно"; деньги - payoutMethod.
         selfPurchased: z.boolean().optional(),
@@ -325,7 +342,7 @@ export async function wishlistRoutes(app: FastifyInstance) {
         // А-5: способ получить деньги на этот подарок (нет - покупка в
         // магазине) и реквизиты; пустые реквизиты берутся из профиля.
         payoutMethod: z.enum(["sbp", "fundraiser"]).nullable().optional(),
-        sbpPhone: z.string().regex(PHONE_RE, "invalid_phone").optional(),
+        sbpPhone: phoneSchema.optional(),
         sbpBank: z.string().regex(BANK_RE, "invalid_bank").optional(),
         // Сбор по ссылке банка (ТЗ блок 4). Та же защита схемы, что и у
         // ссылки на товар (Б-8).
@@ -345,6 +362,11 @@ export async function wishlistRoutes(app: FastifyInstance) {
     if (wishlist.owner.telegramId !== BigInt(telegramId)) {
       return reply.code(403).send({ error: "not_your_wishlist" });
     }
+
+    // Аудит 2026-10-08, А-33: потолок позиций в вишлисте и частота
+    // добавлений (services/itemLimits.ts).
+    const limit = await checkItemAddAllowed(wishlist.id, wishlist.ownerId);
+    if (limit) return reply.code(limit === "too_many_requests" ? 429 : 409).send({ error: limit });
 
     // А-5: те же правила, что при правке (создание = правка пустого
     // подарка) - services/itemEdit.ts.

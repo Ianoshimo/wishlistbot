@@ -12,14 +12,45 @@ import { eventRoutes } from "./routes/events.js";
 import { track } from "./services/analytics.js";
 import { startReminderScheduler } from "./services/reminders.js";
 
-const app = Fastify({ logger: true });
+// Аудит 2026-10-08, А-35: в лог запроса - только путь, без query-строки.
+// Раньше мини-апп слал ?telegramId=... в каждом GET, и в логах (на Railway -
+// у третьей стороны) копилась связка "telegramId <-> вишлист", хотя
+// аналитика нарочно без telegramId. Фронт больше не шлёт telegramId внутри
+// Telegram, а сериализатор режет query на случай старых клиентов.
+const app = Fastify({
+  logger: {
+    serializers: {
+      req(req) {
+        return {
+          method: req.method,
+          url: (req.url ?? "").split("?")[0],
+          hostname: req.hostname,
+          remoteAddress: req.ip,
+        };
+      },
+    },
+  },
+});
 
 // Беклог Б-3 (Продукт/беклог-баги-итерация-1.md): без этого обработчика
 // любая ошибка валидации Zod или Prisma долетала до клиента как 500 с
 // полным телом исключения (внутренние коды, текст схемы).
 app.setErrorHandler((error, req, reply) => {
   if (error instanceof ZodError) {
-    return reply.code(400).send({ error: "validation_error", issues: error.issues });
+    // Аудит 2026-10-08, А-17/А-18: у части проверок сообщение - машинный
+    // код (`price_too_large`, `invalid_phone`) - отдаём его как error, чтобы
+    // фронт показал конкретный текст, а не общее "Проверьте данные".
+    // Стандартные сообщения Zod ("Required", "Invalid url") - не коды.
+    const coded = error.issues.find((i) => /^[a-z][a-z0-9_]{2,49}$/.test(i.message));
+    return reply.code(400).send({ error: coded?.message ?? "validation_error", issues: error.issues });
+  }
+  // Аудит 2026-10-08, А-23: ошибки самого Fastify с клиентским статусом
+  // (битый JSON - FST_ERR_CTP_INVALID_JSON, 400; не тот Content-Type - 415;
+  // слишком большое тело - 413) раньше превращались в 500 и засоряли
+  // api_error. Отдаём их статус как есть.
+  const status = (error as { statusCode?: number }).statusCode;
+  if (typeof status === "number" && status >= 400 && status < 500) {
+    return reply.code(status).send({ error: status === 400 ? "bad_request" : `http_${status}` });
   }
   if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2025") {
     return reply.code(404).send({ error: "not_found" });
