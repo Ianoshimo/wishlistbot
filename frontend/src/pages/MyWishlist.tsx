@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { api, apiError, formatOccasionDate, formatRub, trackEvent, type Item, type MyWishlistSummary, type WishlistResponse, type UiError } from "../api";
 import {
+  AddBar,
   BottomSheet,
   ErrorBanner,
-  Fab,
   Header,
+  Loading,
   PriorityStar,
   ProgressCard,
   Screen,
@@ -30,6 +31,7 @@ const WISHLIST_LIMIT = 3;
 export const MY_SLUG_KEY = "wishlistbot_my_slug";
 
 export function MyWishlist() {
+  const navigate = useNavigate();
   const [wishlist, setWishlist] = useState<WishlistResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<UiError | null>(null);
@@ -101,7 +103,8 @@ export function MyWishlist() {
     }
   };
 
-  if (loading) return null;
+  // А-29: скелетон вместо пустого экрана.
+  if (loading) return <Loading />;
   if (error) {
     return (
       <Screen>
@@ -112,7 +115,7 @@ export function MyWishlist() {
       </Screen>
     );
   }
-  if (!wishlist) return null;
+  if (!wishlist) return <Loading />;
 
   // QA-6: счётчик позиций во вкладке обновляется вместе со списком, а не
   // только после перезагрузки.
@@ -160,13 +163,14 @@ export function MyWishlist() {
       {/* Переключатель вишлистов (CLAUDE.md, 2026-10-02, "сделай 3 и
           названия для них") - тап по уже активной вкладке открывает
           переименование, а не повторную загрузку того же списка. */}
-      <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "0 16px 12px" }}>
+      <div style={{ display: "flex", gap: 12, overflowX: "auto", padding: "6px 16px 12px", margin: "-6px 0 0" }}>
         {myWishlists.map((w) => {
           const active = w.slug === wishlist.slug;
           return (
             <button
               key={w.slug}
               onClick={() => (active ? setNameSheet("rename") : switchTo(w.slug))}
+              className="hit44"
               style={{
                 flexShrink: 0,
                 height: 34,
@@ -174,7 +178,7 @@ export function MyWishlist() {
                 borderRadius: 999,
                 border: active ? "none" : "1px solid var(--border)",
                 background: active ? "var(--accent)" : "var(--surface)",
-                color: active ? "#ffffff" : "var(--text-secondary)",
+                color: active ? "var(--on-accent)" : "var(--text-secondary)",
                 fontSize: 13,
                 fontWeight: 600,
                 whiteSpace: "nowrap",
@@ -189,6 +193,7 @@ export function MyWishlist() {
           <button
             onClick={() => setNameSheet("create")}
             aria-label="Новый вишлист"
+            className="hit44"
             style={{
               flexShrink: 0,
               height: 34,
@@ -196,7 +201,7 @@ export function MyWishlist() {
               borderRadius: 999,
               border: "1px solid var(--border)",
               background: "var(--surface)",
-              color: "var(--accent)",
+              color: "var(--accent-text)",
               fontSize: 16,
               fontWeight: 700,
             }}
@@ -215,7 +220,7 @@ export function MyWishlist() {
             borderRadius: 12,
             background: "var(--accent-soft)",
             border: "none",
-            color: "var(--accent)",
+            color: "var(--accent-text)",
             fontSize: 13,
             fontWeight: 600,
             textAlign: "left",
@@ -262,7 +267,7 @@ export function MyWishlist() {
               padding: "0 24px",
               borderRadius: 14,
               background: "var(--accent)",
-              color: "#ffffff",
+              color: "var(--on-accent)",
               fontSize: 15,
               fontWeight: 600,
               border: "none",
@@ -282,7 +287,7 @@ export function MyWishlist() {
             style={{
               flexGrow: 1,
               overflowY: "auto",
-              padding: "0 12px 90px",
+              padding: "0 12px 12px",
               display: "flex",
               flexDirection: "column",
               gap: 10,
@@ -290,8 +295,20 @@ export function MyWishlist() {
           >
             {sortedItems.map((item) => (
               <SwipeToDelete key={item.id} onDelete={() => deleteItem(item)}>
+                {/* Аудит 2026-10-08, А-21: тап по карточке открывает экран
+                    позиции (фото, "Посмотреть в магазине", статус) - раньше
+                    у владельца карточка не открывалась вовсе. Звёздочка и
+                    карандаш гасят всплытие клика. */}
                 <div
+                  role="link"
+                  tabIndex={0}
+                  aria-label={`Открыть: ${item.title ?? item.url}`}
+                  onClick={() => navigate(`/item/${item.id}`)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") navigate(`/item/${item.id}`);
+                  }}
                   style={{
+                    cursor: "pointer",
                     display: "flex",
                     gap: 12,
                     alignItems: "center",
@@ -321,12 +338,15 @@ export function MyWishlist() {
                     </div>
                     <PayoutLabel item={item} />
                     {item.giverNames.length > 0 && (
-                      <div style={{ fontSize: 12, color: "var(--accent)" }}>
+                      <div style={{ fontSize: 12, color: "var(--accent-text)" }}>
                         {item.giverNames.length > 1 ? "Дарят: " : "Дарит: "}
                         {item.giverNames.join(", ")}
                       </div>
                     )}
                   </div>
+                  {/* А-27: звёздочка и карандаш - по 44x44, вплотную друг к
+                      другу и к краю карточки, чтобы название не сжималось. */}
+                  <div style={{ display: "flex", flexShrink: 0, margin: "-6px -8px -6px -6px" }} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
                   <PriorityStar active={item.priority} editable onClick={() => togglePriority(item.id)} />
                   <button
                     onClick={() => {
@@ -335,8 +355,8 @@ export function MyWishlist() {
                     }}
                     aria-label="Редактировать позицию"
                     style={{
-                      width: 28,
-                      height: 28,
+                      width: 44,
+                      height: 44,
                       flexShrink: 0,
                       borderRadius: 8,
                       background: "transparent",
@@ -357,6 +377,7 @@ export function MyWishlist() {
                       />
                     </svg>
                   </button>
+                  </div>
                 </div>
               </SwipeToDelete>
             ))}
@@ -364,15 +385,17 @@ export function MyWishlist() {
         </>
       )}
 
-      <Fab
-        label="Добавить позицию"
-        onClick={() => {
-          trackEvent("form_opened", { form: "add_item" });
-          setAddOpen(true);
-        }}
-      />
+      {wishlist.items.length > 0 && (
+        <AddBar
+          label="Добавить подарок"
+          onClick={() => {
+            trackEvent("form_opened", { form: "add_item" });
+            setAddOpen(true);
+          }}
+        />
+      )}
 
-      <BottomSheet open={addOpen} onClose={() => setAddOpen(false)} title="Новая позиция">
+      <BottomSheet open={addOpen} onClose={() => setAddOpen(false)} title="Новая позиция" confirmClose>
         <AddItemForm
           slug={wishlist.slug}
           onAdded={(item) => {
@@ -383,7 +406,7 @@ export function MyWishlist() {
         />
       </BottomSheet>
 
-      <BottomSheet open={Boolean(editingItem)} onClose={() => setEditingItem(null)} title="Редактировать позицию">
+      <BottomSheet open={Boolean(editingItem)} onClose={() => setEditingItem(null)} title="Редактировать позицию" confirmClose>
         {editingItem && (
           <EditItemForm
             key={editingItem.id}
@@ -481,7 +504,7 @@ function ActionRow({ slug, onCalendar }: { slug: string; onCalendar: () => void 
   } as const;
   return (
     <div style={{ display: "flex", gap: 10, padding: "0 16px 12px" }}>
-      <Link to={`/w/${slug}/share`} style={{ ...base, background: "var(--accent)", color: "#ffffff" }}>
+      <Link to={`/w/${slug}/share`} style={{ ...base, background: "var(--accent)", color: "var(--on-accent)" }}>
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
           <path d="M12 16V4M12 4l-4 4M12 4l4 4M5 14v4a2 2 0 002 2h10a2 2 0 002-2v-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
@@ -489,7 +512,7 @@ function ActionRow({ slug, onCalendar }: { slug: string; onCalendar: () => void 
       </Link>
       <button
         onClick={onCalendar}
-        style={{ ...base, background: "var(--surface)", border: "1px solid var(--border)", color: "var(--accent)" }}
+        style={{ ...base, background: "var(--surface)", border: "1px solid var(--border)", color: "var(--accent-text)" }}
       >
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
           <rect x="3" y="5" width="18" height="16" rx="2" stroke="currentColor" strokeWidth="2" />

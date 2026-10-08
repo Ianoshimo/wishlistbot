@@ -40,6 +40,14 @@ const ERROR_MESSAGES: Record<string, string> = {
   split_item_already_reserved: "Подарок уже забронирован одним человеком - складчину включить нельзя",
   item_already_bought: "Подарок уже куплен - менять можно только ссылку, название, цену и фото",
   item_has_givers: "Подарок уже забронирован - способ подарить менять нельзя, чтобы не подвести дарителя",
+  // Аудит 2026-10-08, P2: конкретные тексты вместо общего "Проверьте данные".
+  price_too_large: "Цена слишком большая - максимум 20 000 000 ₽",
+  invalid_phone: "Проверьте номер: нужен российский номер из 10-11 цифр, например +7 900 123-45-67",
+  invalid_bank: "Проверьте название банка - до 40 символов",
+  invalid_url_scheme: "Нужна ссылка, которая начинается с http:// или https://",
+  item_limit_reached: "В вишлисте уже 200 подарков - удалите ненужные, чтобы добавить новый",
+  too_many_requests: "Слишком много подарков подряд - подождите минуту и попробуйте снова",
+  bad_request: "Не удалось отправить данные - обновите экран и попробуйте ещё раз",
 };
 
 // Повод хранится как UTC-полночь календарного дня (QA-14) - показываем его
@@ -137,6 +145,9 @@ export interface Item {
   // Сколько уже присоединилось (при maxContributors === 1 - 0 или 1,
   // как и раньше).
   contributorsCount: number;
+  // Аудит 2026-10-08, А-20: сколько участников складчины отметили перевод -
+  // только владельцу (без имён), остальным null.
+  paidCount: number | null;
   // Отметил ли СВОЮ долю именно текущий зритель - отдельно от общего
   // status (который "bought" только когда оплатили все).
   paidByMe: boolean;
@@ -211,7 +222,7 @@ export const api = {
   createWishlist: (title?: string, onlyIfNone?: boolean) =>
     request<{ id: string; slug: string; title: string }>("/api/wishlists", {
       method: "POST",
-      body: JSON.stringify({ telegramId: getTelegramId(), title, onlyIfNone }),
+      body: JSON.stringify({ telegramId: getTelegramId() ?? undefined, title, onlyIfNone }),
     }),
 
   // Все вишлисты текущего пользователя - переключатель в MyWishlist.tsx
@@ -227,7 +238,7 @@ export const api = {
   renameWishlist: (slug: string, title: string) =>
     request<{ title: string }>(`/api/wishlists/${slug}`, {
       method: "PATCH",
-      body: JSON.stringify({ title, telegramId: getTelegramId() }),
+      body: JSON.stringify({ title, telegramId: getTelegramId() ?? undefined }),
     }),
 
   getWishlist: (slug: string) => {
@@ -258,7 +269,7 @@ export const api = {
   ) =>
     request<Item>(`/api/wishlists/${slug}/items`, {
       method: "POST",
-      body: JSON.stringify({ ...data, telegramId: getTelegramId() }),
+      body: JSON.stringify({ ...data, telegramId: getTelegramId() ?? undefined }),
     }),
 
   // Телефон для СБП - реквизит получателя, переиспользуется для всех его
@@ -277,19 +288,19 @@ export const api = {
   setOccasion: (slug: string, occasionTitle: string | null, occasionDate: string | null) =>
     request<{ occasionTitle: string | null; occasionDate: string | null }>(`/api/wishlists/${slug}`, {
       method: "PATCH",
-      body: JSON.stringify({ occasionTitle, occasionDate, telegramId: getTelegramId() }),
+      body: JSON.stringify({ occasionTitle, occasionDate, telegramId: getTelegramId() ?? undefined }),
     }),
 
   reserveItem: (itemId: string, revealIdentity?: boolean) =>
     request(`/api/items/${itemId}/reserve`, {
       method: "POST",
-      body: JSON.stringify({ telegramId: getTelegramId(), revealIdentity }),
+      body: JSON.stringify({ telegramId: getTelegramId() ?? undefined, revealIdentity }),
     }),
 
   markBought: (itemId: string) =>
     request(`/api/items/${itemId}/mark-bought`, {
       method: "POST",
-      body: JSON.stringify({ telegramId: getTelegramId() }),
+      body: JSON.stringify({ telegramId: getTelegramId() ?? undefined }),
     }),
 
   // Беклог Н-4: бэкенд (DELETE /api/items/:itemId) был реализован и
@@ -297,13 +308,13 @@ export const api = {
   deleteItem: (itemId: string) =>
     request(`/api/items/${itemId}`, {
       method: "DELETE",
-      body: JSON.stringify({ telegramId: getTelegramId() }),
+      body: JSON.stringify({ telegramId: getTelegramId() ?? undefined }),
     }),
 
   toggleItemPriority: (itemId: string) =>
     request<{ priority: boolean }>(`/api/items/${itemId}/priority`, {
       method: "POST",
-      body: JSON.stringify({ telegramId: getTelegramId() }),
+      body: JSON.stringify({ telegramId: getTelegramId() ?? undefined }),
     }),
 
   updateItem: (
@@ -324,7 +335,7 @@ export const api = {
   ) =>
     request<Item>(`/api/items/${itemId}`, {
       method: "PATCH",
-      body: JSON.stringify({ ...data, telegramId: getTelegramId() }),
+      body: JSON.stringify({ ...data, telegramId: getTelegramId() ?? undefined }),
     }),
 
   createPool: (data: {
@@ -335,7 +346,7 @@ export const api = {
   }) =>
     request<{ id: string }>("/api/pools", {
       method: "POST",
-      body: JSON.stringify({ ...data, telegramId: getTelegramId() }),
+      body: JSON.stringify({ ...data, telegramId: getTelegramId() ?? undefined }),
     }),
 
   getPool: (id: string) => {
@@ -353,7 +364,7 @@ export const api = {
   contribute: (id: string, amount: number) =>
     request(`/api/pools/${id}/contribute`, {
       method: "POST",
-      body: JSON.stringify({ telegramId: getTelegramId(), amount }),
+      body: JSON.stringify({ telegramId: getTelegramId() ?? undefined, amount }),
     }),
 };
 
@@ -373,7 +384,7 @@ function flushEvents() {
       method: "POST",
       keepalive: true,
       headers: { "Content-Type": "application/json", "X-Telegram-Init-Data": getInitData() },
-      body: JSON.stringify({ telegramId: getTelegramId(), events }),
+      body: JSON.stringify({ telegramId: getTelegramId() ?? undefined, events }),
     }).catch(() => {});
   } catch {
     // ignore

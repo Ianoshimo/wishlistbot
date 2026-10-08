@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { absoluteApiUrl, api, apiError, formatOccasionDate, formatRub, trackEvent, type UiError, type WishlistResponse } from "../api";
 import { markStartParamHandled, openExternalLink } from "../telegram";
 import { MY_SLUG_KEY } from "./MyWishlist";
-import { ErrorBanner, Header, PayoutLabel, PriorityStar, Screen, StatusBadge, StoreBadge, Thumbnail } from "../components/UI";
+import { ErrorBanner, Header, Loading, PayoutLabel, PriorityStar, Screen, StatusBadge, StoreBadge, Thumbnail, mineStatus } from "../components/UI";
 
 // Спека итерации 1, п.9 + флоу-итерация-1.md: первый переход по ссылке
 // показывает приглашение, повторный - сразу список. Метка "видел ли уже"
@@ -79,7 +79,8 @@ export function SharedWishlist() {
     );
   }
 
-  if (!wishlist || wishlist.isOwner) return null;
+  // А-29: скелетон, пока грузится (и пока владельца уводим в свой список).
+  if (!wishlist || wishlist.isOwner) return <Loading />;
 
   if (showInvite) {
     return (
@@ -109,7 +110,7 @@ export function SharedWishlist() {
               height: 50,
               borderRadius: 14,
               background: "var(--accent)",
-              color: "#ffffff",
+              color: "var(--on-accent)",
               fontSize: 15,
               fontWeight: 600,
               border: "none",
@@ -143,7 +144,7 @@ export function SharedWishlist() {
             gap: 12,
           }}
         >
-          <div style={{ flexGrow: 1, fontSize: 13, fontWeight: 600, color: "var(--accent)" }}>
+          <div style={{ flexGrow: 1, fontSize: 13, fontWeight: 600, color: "var(--accent-text)" }}>
             🎉 {wishlist.occasionTitle} ·{" "}
             {formatOccasionDate(wishlist.occasionDate)}
           </div>
@@ -154,13 +155,14 @@ export function SharedWishlist() {
               trackEvent("calendar_add_clicked");
               openExternalLink(absoluteApiUrl(`/api/wishlists/${slug}/occasion.ics`));
             }}
+            className="hit44"
             style={{
               flexShrink: 0,
               height: 32,
               padding: "0 12px",
               borderRadius: 8,
               background: "var(--accent)",
-              color: "#ffffff",
+              color: "var(--on-accent)",
               display: "flex",
               alignItems: "center",
               fontSize: 12,
@@ -200,7 +202,8 @@ export function SharedWishlist() {
                   </span>
                 )}
                 <StoreBadge store={item.store} />
-                <StatusBadge status={item.status} />
+                {/* А-30: своя бронь/доля - своим бейджем. */}
+                <StatusBadge status={item.status} mine={mineStatus(item)} />
               </div>
               <PayoutLabel item={item} />
             </div>
@@ -217,7 +220,7 @@ export function SharedWishlist() {
             borderRadius: 14,
             background: "var(--surface)",
             border: "1px solid var(--border)",
-            color: "var(--accent)",
+            color: "var(--accent-text)",
             fontSize: 15,
             fontWeight: 600,
           }}

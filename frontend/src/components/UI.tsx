@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { isInsideTelegram, showTelegramBackButton } from "../telegram";
-import { trackEvent } from "../api";
+import { isInsideTelegram, setClosingConfirmation, showTelegramBackButton } from "../telegram";
+import { formatRub, trackEvent } from "../api";
 
 export function Screen({ children }: { children: ReactNode }) {
   return (
@@ -54,8 +54,10 @@ export function Header({
           to={backTo}
           aria-label="Назад"
           style={{
-            width: 32,
-            height: 32,
+            // А-27: зона нажатия 44x44, отрицательный отступ сохраняет вёрстку.
+            width: 44,
+            height: 44,
+            margin: "-6px -6px -6px -10px",
             borderRadius: 9,
             display: "flex",
             alignItems: "center",
@@ -89,7 +91,7 @@ export function PrimaryButton(
         height: 50,
         borderRadius: 14,
         background: "var(--accent)",
-        color: "#ffffff",
+        color: "var(--on-accent)",
         fontSize: 15,
         fontWeight: 600,
         border: "none",
@@ -99,13 +101,36 @@ export function PrimaryButton(
   );
 }
 
-export function StatusBadge({ status }: { status: "available" | "reserved" | "bought" }) {
+// Аудит 2026-10-08, А-30: свои брони и доли в чужом списке - отдельным
+// бейджем ("Вы бронируете", "Вы участвуете"...), а не общим "Занято" -
+// иначе свои брони приходится искать, открывая каждую карточку.
+export type MineStatus = "reserved" | "joined" | "paid" | "gave";
+
+export function mineStatus(item: {
+  reservedByMe: boolean;
+  paidByMe: boolean;
+  status: "available" | "reserved" | "bought";
+  maxContributors: number;
+}): MineStatus | null {
+  if (!item.reservedByMe) return null;
+  if (item.status === "bought") return "gave";
+  if (item.maxContributors > 1) return item.paidByMe ? "paid" : "joined";
+  return "reserved";
+}
+
+export function StatusBadge({ status, mine = null }: { status: "available" | "reserved" | "bought"; mine?: MineStatus | null }) {
   const map = {
-    available: { label: "Свободно", bg: "var(--accent-soft)", color: "var(--accent)" },
-    reserved: { label: "Занято", bg: "var(--warning-soft)", color: "var(--warning)" },
-    bought: { label: "Куплено", bg: "var(--success-soft)", color: "var(--success)" },
+    available: { label: "Свободно", bg: "var(--accent-soft)", color: "var(--accent-text)" },
+    reserved: { label: "Занято", bg: "var(--warning-soft)", color: "var(--warning-text)" },
+    bought: { label: "Куплено", bg: "var(--success-soft)", color: "var(--success-text)" },
   } as const;
-  const s = map[status];
+  const mineMap = {
+    reserved: { label: "Вы бронируете", bg: "var(--highlight-soft)", color: "var(--text-primary)" },
+    joined: { label: "Вы участвуете", bg: "var(--highlight-soft)", color: "var(--text-primary)" },
+    paid: { label: "Вы перевели", bg: "var(--highlight-soft)", color: "var(--text-primary)" },
+    gave: { label: "Вы подарили", bg: "var(--success-soft)", color: "var(--success-text)" },
+  } as const;
+  const s = mine ? mineMap[mine] : map[status];
   return (
     <div
       style={{
@@ -116,6 +141,9 @@ export function StatusBadge({ status }: { status: "available" | "reserved" | "bo
         fontWeight: 600,
         background: s.bg,
         color: s.color,
+        // Своё - с обводкой, чтобы отличалось от чужих броней не только цветом.
+        boxShadow: mine ? "inset 0 0 0 1px var(--highlight)" : undefined,
+        whiteSpace: "nowrap",
       }}
     >
       {s.label}
@@ -172,7 +200,7 @@ export function Thumbnail({ src, size = 48, store = null }: { src: string | null
         alignItems: "center",
         justifyContent: "center",
         background: "linear-gradient(135deg, var(--accent-soft), var(--highlight-soft))",
-        color: "var(--accent)",
+        color: "var(--accent-text)",
       }}
     >
       {letter ? (
@@ -199,7 +227,19 @@ export function Thumbnail({ src, size = 48, store = null }: { src: string | null
 // комментарий (название подарка) - см. ItemDetail.tsx. navigator.clipboard
 // недоступен в части старых WebView, поэтому молча деградируем вместо
 // падения - текст всё равно виден и выделяем вручную.
-export function CopyRow({ label, value, onCopied }: { label: string; value: string; onCopied?: () => void }) {
+export function CopyRow({
+  label,
+  value,
+  display,
+  onCopied,
+}: {
+  label: string;
+  value: string;
+  // Как показать значение (например, номер "+7 900 123-45-67"), если
+  // копировать нужно другое (+79001234567) - А-18.
+  display?: string;
+  onCopied?: () => void;
+}) {
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
@@ -227,15 +267,16 @@ export function CopyRow({ label, value, onCopied }: { label: string; value: stri
           border: "1px solid var(--border)",
         }}
       >
-        <div style={{ flexGrow: 1, fontSize: 15, fontWeight: 600, overflowWrap: "anywhere" }}>{value}</div>
+        <div style={{ flexGrow: 1, fontSize: 15, fontWeight: 600, overflowWrap: "anywhere" }}>{display ?? value}</div>
         <button
           onClick={copy}
+          className="hit44"
           style={{
             height: 32,
             padding: "0 10px",
             borderRadius: 8,
             background: "var(--accent-soft)",
-            color: "var(--accent)",
+            color: "var(--accent-text)",
             border: "none",
             fontSize: 12,
             fontWeight: 600,
@@ -249,34 +290,73 @@ export function CopyRow({ label, value, onCopied }: { label: string; value: stri
   );
 }
 
-// Редизайн "Электрик" (CLAUDE.md, 2026-10-01): FAB вместо мелкой иконки в
-// шапке - крупнее, удобнее дотянуться большим пальцем на одной руке.
-export function Fab({ onClick, label }: { onClick: () => void; label: string }) {
+// Редизайн "Электрик" (CLAUDE.md, 2026-10-01): крупная кнопка "+" в зоне
+// большого пальца вместо мелкой иконки в шапке. Аудит 2026-10-08, А-24:
+// плавающий FAB в правом нижнем углу лежал поверх звёздочки и карандаша
+// нижней видимой карточки. Теперь это нижняя панель на всю ширину,
+// прилипающая к низу экрана (sticky) с непрозрачным фоном: карточки
+// уходят ПОД неё при прокрутке, а в конце списка - целиком над ней. Ни в
+// одном положении прокрутки действия карточки не перекрываются кнопкой.
+export function AddBar({ onClick, label }: { onClick: () => void; label: string }) {
   return (
-    <button
-      onClick={onClick}
-      aria-label={label}
+    <div
       style={{
-        position: "fixed",
-        right: 20,
-        bottom: "calc(24px + var(--safe-bottom))",
-        width: 56,
-        height: 56,
-        borderRadius: 18,
-        background: "var(--accent)",
-        color: "#ffffff",
-        border: "none",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        boxShadow: "0 10px 24px rgba(77, 62, 153, 0.35)",
+        position: "sticky",
+        bottom: 0,
         zIndex: 20,
+        marginTop: "auto",
+        padding: "10px 16px calc(12px + var(--safe-bottom))",
+        background: "var(--bg)",
+        borderTop: "1px solid var(--border)",
       }}
     >
-      <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-        <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
-      </svg>
-    </button>
+      <button
+        onClick={onClick}
+        style={{
+          width: "100%",
+          height: 50,
+          borderRadius: 14,
+          background: "var(--accent)",
+          color: "var(--on-accent)",
+          border: "none",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 8,
+          fontSize: 15,
+          fontWeight: 600,
+          boxShadow: "0 8px 20px rgba(77, 62, 153, 0.25)",
+        }}
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <path d="M12 5v14M5 12h14" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+        </svg>
+        {label}
+      </button>
+    </div>
+  );
+}
+
+// Аудит 2026-10-08, А-29: вместо пустого фона во время загрузки -
+// скелетон шапки и карточек (пульсирует, при reduced-motion - статичный).
+export function Loading({ cards = 4 }: { cards?: number }) {
+  return (
+    <Screen>
+      <div role="status" aria-live="polite" aria-label="Загрузка" style={{ padding: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div className="skeleton" style={{ height: 22, width: "55%", borderRadius: 8 }} />
+        <div className="skeleton" style={{ height: 72, borderRadius: 16 }} />
+        {Array.from({ length: cards }, (_, i) => (
+          <div key={i} style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            <div className="skeleton" style={{ width: 48, height: 48, borderRadius: 10, flexShrink: 0 }} />
+            <div style={{ flexGrow: 1, display: "flex", flexDirection: "column", gap: 8 }}>
+              <div className="skeleton" style={{ height: 14, width: `${70 - i * 8}%`, borderRadius: 6 }} />
+              <div className="skeleton" style={{ height: 12, width: "35%", borderRadius: 6 }} />
+            </div>
+          </div>
+        ))}
+        <span style={{ position: "absolute", width: 1, height: 1, overflow: "hidden", clip: "rect(0 0 0 0)" }}>Загружаем…</span>
+      </div>
+    </Screen>
   );
 }
 
@@ -376,8 +456,9 @@ export function PriorityStar({
       onClick={onClick}
       aria-label={active ? "Убрать из приоритетных" : "Отметить как желанное больше всего"}
       style={{
-        width: 32,
-        height: 32,
+        // А-27: зона нажатия 44x44 (была 32).
+        width: 44,
+        height: 44,
         flexShrink: 0,
         borderRadius: 8,
         background: "transparent",
@@ -400,12 +481,22 @@ export function BottomSheet({
   onClose,
   title,
   children,
+  confirmClose = false,
 }: {
   open: boolean;
   onClose: () => void;
   title: string;
   children: ReactNode;
+  // А-34: шторка с формой - пока открыта, Telegram переспрашивает перед
+  // закрытием мини-аппа, чтобы введённое не потерялось от случайного жеста.
+  confirmClose?: boolean;
 }) {
+  useEffect(() => {
+    if (!open || !confirmClose) return;
+    setClosingConfirmation(true);
+    return () => setClosingConfirmation(false);
+  }, [open, confirmClose]);
+
   // Esc закрывает на десктопе/вне Telegram - внутри самого Telegram
   // клавиатуры в таком смысле нет, но это бесплатно и не мешает.
   useEffect(() => {
@@ -470,14 +561,16 @@ export function BottomSheet({
           <div className="font-display" style={{ flexGrow: 1, fontSize: 17, fontWeight: 700 }}>
             {title}
           </div>
+          {/* А-27: кнопка 44x44, видимый кружок прежний - 32x32. */}
           <button
             onClick={onClose}
             aria-label="Закрыть"
             style={{
-              width: 32,
-              height: 32,
-              borderRadius: 9,
-              background: "var(--surface)",
+              width: 44,
+              height: 44,
+              margin: "-6px -6px -6px 0",
+              padding: 0,
+              background: "transparent",
               border: "none",
               display: "flex",
               alignItems: "center",
@@ -485,9 +578,21 @@ export function BottomSheet({
               color: "var(--text-secondary)",
             }}
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-            </svg>
+            <span
+              style={{
+                width: 32,
+                height: 32,
+                borderRadius: 9,
+                background: "var(--surface)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              </svg>
+            </span>
           </button>
         </div>
         </div>
@@ -646,14 +751,49 @@ export function ToggleRow({
 // Аудит 2026-10-08, А-5: подпись способа получить деньги в списках -
 // "Подарок деньгами · СБП" / "Сбор в банке" (+ складчина), "уже купил сам" -
 // пометкой "в магазин не нужно" (не словом "куплено", А-7).
+// А-25: у складчины с ценой - доля "по ~1 375 ₽ с человека" прямо в списке.
+// А-20: владельцу - сколько уже перевели и примерно сколько собрано
+// (paidCount приходит только владельцу, без имён); дарителю - общий
+// прогресс "участвуют X из N".
 export function PayoutLabel({
   item,
 }: {
-  item: { payoutMethod: "sbp" | "fundraiser" | null; selfPurchased: boolean; maxContributors: number; contributorsCount: number };
+  item: {
+    payoutMethod: "sbp" | "fundraiser" | null;
+    selfPurchased: boolean;
+    maxContributors: number;
+    contributorsCount: number;
+    price?: number | null;
+    paidCount?: number | null;
+    status?: "available" | "reserved" | "bought";
+  };
 }) {
   if (!item.payoutMethod) return null;
   const parts = [item.payoutMethod === "sbp" ? "Подарок деньгами · СБП" : "Сбор в банке"];
   if (item.selfPurchased) parts.push("в магазин не нужно");
-  if (item.maxContributors > 1) parts.push(`участвуют ${item.contributorsCount} из ${item.maxContributors}`);
-  return <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>{parts.join(" · ")}</div>;
+  const split = item.maxContributors > 1;
+  const share = split && item.price ? Math.round(item.price / item.maxContributors) : null;
+  let progress: string | null = null;
+  if (split && item.status !== "bought") {
+    if (item.paidCount !== null && item.paidCount !== undefined) {
+      const waiting = item.contributorsCount - item.paidCount;
+      progress = `перевели ${item.paidCount}\u00a0из\u00a0${item.maxContributors}`;
+      if (waiting > 0) progress += ` · ещё\u00a0${waiting}\u00a0${waiting === 1 ? "участвует" : "участвуют"}`;
+      if (share && item.paidCount > 0) progress += ` · собрано ≈\u00a0${formatRub(share * item.paidCount)}`;
+    } else {
+      progress = `участвуют ${item.contributorsCount}\u00a0из\u00a0${item.maxContributors}`;
+    }
+  }
+  return (
+    <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+      {parts.join(" · ")}
+      {share && (
+        <>
+          {" · "}
+          <span style={{ whiteSpace: "nowrap" }}>по ~{formatRub(share)} с человека</span>
+        </>
+      )}
+      {progress && <div>{progress}</div>}
+    </div>
+  );
 }

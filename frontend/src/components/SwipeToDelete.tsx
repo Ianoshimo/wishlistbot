@@ -1,4 +1,4 @@
-import { useRef, useState, type PointerEvent, type ReactNode } from "react";
+import { useRef, useState, type MouseEvent as ReactMouseEvent, type PointerEvent, type ReactNode } from "react";
 
 // Свайп-удаление вместо отдельной крестик-кнопки (CLAUDE.md, 2026-10-01) -
 // привычный жест из самого Telegram. Pointer events вместо отдельных
@@ -19,6 +19,9 @@ export function SwipeToDelete({
 }) {
   const [offset, setOffset] = useState(0);
   const dragState = useRef<{ startX: number; startOffset: number; dragging: boolean } | null>(null);
+  // Аудит 2026-10-08, А-21: карточка теперь открывается тапом - клик,
+  // который браузер шлёт сразу после свайпа, не должен открывать позицию.
+  const justDragged = useRef(false);
 
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
     // Pointer capture нарочно НЕ ставится здесь (на каждом pointerdown) -
@@ -46,7 +49,27 @@ export function SwipeToDelete({
     const state = dragState.current;
     dragState.current = null;
     if (!state?.dragging) return;
+    justDragged.current = true;
+    window.setTimeout(() => {
+      justDragged.current = false;
+    }, 300);
     setOffset(offset < -ACTION_WIDTH / 2 ? -ACTION_WIDTH : 0);
+  };
+
+  // Клик после свайпа гасим; тап по сдвинутой карточке - просто закрывает
+  // свайп (как в Telegram), а не открывает позицию.
+  const onClickCapture = (e: ReactMouseEvent) => {
+    if (justDragged.current) {
+      e.stopPropagation();
+      e.preventDefault();
+      justDragged.current = false;
+      return;
+    }
+    if (offset !== 0) {
+      e.stopPropagation();
+      e.preventDefault();
+      setOffset(0);
+    }
   };
 
   return (
@@ -64,7 +87,7 @@ export function SwipeToDelete({
           width: ACTION_WIDTH,
           border: "none",
           background: "var(--danger)",
-          color: "#ffffff",
+          color: "var(--on-danger)",
           fontSize: 13,
           fontWeight: 600,
           // QA-12: у полупрозрачных карточек (купленные позиции) подложка
@@ -80,6 +103,7 @@ export function SwipeToDelete({
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
+        onClickCapture={onClickCapture}
         style={{
           transform: `translateX(${offset}px)`,
           transition: dragState.current ? "none" : "transform 0.2s ease",

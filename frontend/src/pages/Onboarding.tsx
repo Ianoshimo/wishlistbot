@@ -43,7 +43,7 @@ export function Onboarding({ onStart }: { onStart: () => void }) {
             trackEvent("onboarding_create_clicked");
             onStart();
           }}
-          style={{ width: "100%", height: 50, borderRadius: 14, background: "var(--accent)", color: "#ffffff", fontSize: 15, fontWeight: 600, border: "none" }}
+          style={{ width: "100%", height: 50, borderRadius: 14, background: "var(--accent)", color: "var(--on-accent)", fontSize: 15, fontWeight: 600, border: "none" }}
         >
           Создать свой вишлист
         </button>

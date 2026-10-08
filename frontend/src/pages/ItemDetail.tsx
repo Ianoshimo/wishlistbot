@@ -2,7 +2,8 @@ import { useEffect, useState } from "react";
 import { useLocation, useParams } from "react-router-dom";
 import { api, apiError, formatRub, trackEvent, type Item, type UiError } from "../api";
 import { openExternalLink, requestBotMessages } from "../telegram";
-import { BottomSheet, CopyRow, ErrorBanner, Header, PrimaryButton, Screen, StoreBadge, Thumbnail } from "../components/UI";
+import { BottomSheet, CopyRow, ErrorBanner, Header, Loading, PrimaryButton, Screen, StoreBadge, Thumbnail } from "../components/UI";
+import { formatPhone, normalizePhone } from "../phone";
 
 // Спека итерации 1, п.2-3: полный жизненный цикл брони в одном экране,
 // как в дизайн-макете (артборд ItemDetail) - available → reserved → bought.
@@ -61,7 +62,8 @@ export function ItemDetail() {
       </Screen>
     );
   }
-  if (!item) return null;
+  // А-29: скелетон вместо пустого фона.
+  if (!item) return <Loading cards={2} />;
 
   // "Скинуться на подарок" (CLAUDE.md, 2026-10-02) - несколько дарителей
   // делят один подарок вместо брони одним человеком. Та же пара ручек
@@ -187,7 +189,7 @@ export function ItemDetail() {
                 {/* Беклог В-6: раньше писали "вами" безусловно - получатель
                     на своей же позиции тоже это видел. Текст нейтральный для
                     всех, кроме реального держателя брони. */}
-                <div style={{ padding: 14, borderRadius: 14, background: "var(--warning-soft)", color: "var(--warning)", fontSize: 13 }}>
+                <div style={{ padding: 14, borderRadius: 14, background: "var(--warning-soft)", color: "var(--warning-text)", fontSize: 13 }}>
                   {item.reservedByMe
                     ? `Забронировано вами · снимется ${expiresIn(item.reservationExpiresAt)}, если не отметить ${method ? "перевод" : "покупку"}`
                     : "Уже забронировано"}
@@ -209,7 +211,7 @@ export function ItemDetail() {
             )}
 
             {item.status === "bought" && (
-              <div style={{ padding: 14, borderRadius: 14, background: "var(--success-soft)", color: "var(--success)", fontSize: 13 }}>
+              <div style={{ padding: 14, borderRadius: 14, background: "var(--success-soft)", color: "var(--success-text)", fontSize: 13 }}>
                 {!item.reservedByMe
                   ? "Этот подарок уже подарили."
                   : method
@@ -235,12 +237,13 @@ export function ItemDetail() {
 
       <div style={{ padding: "12px 16px 20px", borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 12 }}>
         {canReserve && (
-          <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+          // А-27: вся строка - зона нажатия не ниже 44 px.
+          <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer", minHeight: 44 }}>
             <input
               type="checkbox"
               checked={revealIdentity}
               onChange={(e) => setRevealIdentity(e.target.checked)}
-              style={{ width: 18, height: 18, flexShrink: 0 }}
+              style={{ width: 20, height: 20, flexShrink: 0 }}
             />
             <span style={{ fontSize: 13, color: "var(--text-secondary)" }}>
               Показать получателю, что дарю я
@@ -309,7 +312,7 @@ function SplitStatus({
   if (item.status === "bought") {
     // QA-19: "Спасибо!" - только участникам; остальным - нейтральный статус.
     return (
-      <div style={{ padding: 14, borderRadius: 14, background: "var(--success-soft)", color: "var(--success)", fontSize: 13 }}>
+      <div style={{ padding: 14, borderRadius: 14, background: "var(--success-soft)", color: "var(--success-text)", fontSize: 13 }}>
         {item.reservedByMe
           ? `Спасибо! Все перевели свою часть (${item.maxContributors} из ${item.maxContributors}).`
           : "Подарок уже собран - все участники перевели свою часть."}
@@ -317,10 +320,24 @@ function SplitStatus({
     );
   }
 
+  // А-20: владельцу на экране своей складчины - сколько уже перевели (без
+  // имён; раскрывшиеся дарители видны в списке), а не текст для дарителя.
+  if (item.viewerIsOwner) {
+    const paid = item.paidCount ?? 0;
+    const waiting = item.contributorsCount - paid;
+    return (
+      <div style={{ padding: 14, borderRadius: 14, background: "var(--surface)", border: "1px solid var(--border)", fontSize: 14, color: "var(--text-secondary)" }}>
+        {`Ваша складчина: перевели ${paid} из ${item.maxContributors}`}
+        {waiting > 0 ? `, ещё ${waiting} ${waiting === 1 ? "участвует" : "участвуют"} и пока не отметили перевод` : ""}
+        {share ? `. Доля - примерно ${share} с человека${paid > 0 && item.price ? `, собрано около ${formatRub(Math.round(item.price / item.maxContributors) * paid)}` : ""}.` : "."}
+      </div>
+    );
+  }
+
   if (item.reservedByMe) {
     return (
       <>
-        <div style={{ padding: 14, borderRadius: 14, background: "var(--warning-soft)", color: "var(--warning)", fontSize: 13 }}>
+        <div style={{ padding: 14, borderRadius: 14, background: "var(--warning-soft)", color: "var(--warning-text)", fontSize: 13 }}>
           {item.paidByMe
             ? `Вы перевели свою часть - ждём остальных (${progress})`
             : `Вы присоединились (${progress}) - переведите свою часть${share ? `, примерно ${share}` : ""}. Место снимется ${expiresIn(item.reservationExpiresAt)}, если не отметить ${fundraiser ? "участие" : "перевод"}`}
@@ -387,7 +404,15 @@ function SbpPaymentCard({ item }: { item: Item }) {
         border: "1px solid var(--border)",
       }}
     >
-      {item.sbpPhone ? <CopyRow label="Номер телефона для перевода по СБП" value={item.sbpPhone} onCopied={() => trackEvent("sbp_details_copied", { field: "phone" })} /> : null}
+      {/* А-18: номер в едином виде, копируется нормализованным. */}
+      {item.sbpPhone ? (
+        <CopyRow
+          label="Номер телефона для перевода по СБП"
+          value={normalizePhone(item.sbpPhone) ?? item.sbpPhone}
+          display={formatPhone(item.sbpPhone)}
+          onCopied={() => trackEvent("sbp_details_copied", { field: "phone" })}
+        />
+      ) : null}
       {/* А-5: банк получателя - дарителю нужно выбрать его в переводе по СБП. */}
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Банк получателя</span>

@@ -60,7 +60,8 @@ export function ShareWishlist() {
           </div>
           <button
             onClick={copy}
-            style={{ height: 32, padding: "0 10px", borderRadius: 8, background: "var(--accent-soft)", color: "var(--accent)", border: "none", fontSize: 12, fontWeight: 600, flexShrink: 0 }}
+            className="hit44"
+            style={{ height: 32, padding: "0 10px", borderRadius: 8, background: "var(--accent-soft)", color: "var(--accent-text)", border: "none", fontSize: 12, fontWeight: 600, flexShrink: 0 }}
           >
             {copied ? "Скопировано" : "Копировать"}
           </button>

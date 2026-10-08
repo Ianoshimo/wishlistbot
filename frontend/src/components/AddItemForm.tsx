@@ -11,6 +11,9 @@ import { PayoutDetails, PayoutSegment, toMethod, validatePayout, type PayoutValu
 
 // ТЗ блок 4: складчина до 100 участников.
 export const MAX_CONTRIBUTORS_CAP = 100;
+// Аудит 2026-10-08, А-17: потолок цены, как на бэкенде (20 млн ₽).
+export const MAX_PRICE_RUB = 20_000_000;
+export const PRICE_TOO_LARGE_TEXT = "Цена слишком большая - максимум 20 000 000 ₽";
 // Подсказка про деньги появляется для подарков от этой цены (в рублях).
 const MONEY_HINT_RUB = 5000;
 
@@ -55,6 +58,7 @@ export function AddItemForm({ slug, onAdded }: { slug: string; onAdded: (item: I
     const product = parseProductLink(url);
     if (product.error) return setError(product.error);
     if (price && Number(price) <= 0) return setError(uiError("invalid_price", "Цена должна быть больше нуля"));
+    if (price && Number(price) > MAX_PRICE_RUB) return setError(uiError("price_too_large", PRICE_TOO_LARGE_TEXT));
     if (selfPurchased && !money) {
       return setError(uiError("self_purchased_needs_payout", "Подарок уже куплен - выберите, как друзьям перевести деньги: СБП или сбор"));
     }
@@ -68,6 +72,7 @@ export function AddItemForm({ slug, onAdded }: { slug: string; onAdded: (item: I
     // Показываем, что именно сохранится (ссылка без окружающего текста).
     setUrl(product.url);
     if (checked.fundraiserUrl) patchPayout({ fundraiserUrl: checked.fundraiserUrl });
+    if (checked.phone) patchPayout({ phone: checked.phone });
     setSaving(true);
     setError(null);
     try {
@@ -78,7 +83,7 @@ export function AddItemForm({ slug, onAdded }: { slug: string; onAdded: (item: I
         selfPurchased: selfPurchased || undefined,
         maxContributors: split && money ? n : undefined,
         payoutMethod: toMethod(payout.choice),
-        ...(payout.choice === "sbp" ? { sbpPhone: payout.phone.trim(), sbpBank: payout.bank.trim() } : {}),
+        ...(payout.choice === "sbp" ? { sbpPhone: checked.phone, sbpBank: payout.bank.trim() } : {}),
         ...(payout.choice === "fundraiser" ? { fundraiserUrl: checked.fundraiserUrl } : {}),
       });
       onAdded(item);

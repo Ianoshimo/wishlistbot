@@ -20,6 +20,9 @@ interface TelegramWebApp {
   platform?: string;
   version?: string;
   isFullscreen?: boolean;
+  disableVerticalSwipes?: () => void;
+  enableClosingConfirmation?: () => void;
+  disableClosingConfirmation?: () => void;
   BackButton?: {
     show: () => void;
     hide: () => void;
@@ -61,6 +64,14 @@ export function initTelegram() {
 
   webApp.ready();
   webApp.expand();
+  // Аудит 2026-10-08, А-34: без этого свайп вниз по списку или шторке,
+  // когда прокрутка уже в начале, сворачивал/закрывал мини-апп (в т.ч. с
+  // недозаполненной формой). Bot API 7.7+; на старых клиентах метода нет.
+  try {
+    if (!webApp.isVersionAtLeast || webApp.isVersionAtLeast("7.7")) webApp.disableVerticalSwipes?.();
+  } catch {
+    // старый клиент - жест останется системным
+  }
   document.documentElement.setAttribute("data-theme", webApp.colorScheme);
   webApp.onEvent("themeChanged", () => {
     document.documentElement.setAttribute("data-theme", webApp.colorScheme);
@@ -75,6 +86,13 @@ const DEV_ID_KEY = "wishlistbot_dev_telegram_id";
 // (внутри Telegram) webApp всегда даёт настоящий id, эта ветка не
 // используется.
 export function getTelegramId(): string | null {
+  // Аудит 2026-10-08, А-35: в проде личность бэкенд берёт только из
+  // подписанного initData (заголовок), telegramId в query и теле не нужен -
+  // и не должен попадать в логи сервера. Отдаём id только в dev-сборке
+  // (локальная разработка и эмуляция Telegram через #tgWebAppData, где
+  // подпись поддельная и бэкенд с ALLOW_DEV_TELEGRAM_ID берёт id из запроса).
+  if (!import.meta.env.DEV) return null;
+
   // Реальный window.Telegram.WebApp существует и вне Телеграма (скрипт
   // telegram-web-app.js отдаёт заглушку-объект в обычном браузере), но
   // initDataUnsafe.user там пуст - поэтому проверяем именно наличие id,
@@ -193,6 +211,19 @@ export function requestBotMessages(): void {
     webApp.requestWriteAccess();
   } catch {
     // старый клиент - напоминания просто не дойдут, бронь работает
+  }
+}
+
+// Аудит 2026-10-08, А-34: пока открыта форма (добавление/правка подарка),
+// Telegram спрашивает подтверждение перед закрытием мини-аппа - введённое
+// не теряется от случайного жеста. Bot API 6.2+.
+export function setClosingConfirmation(on: boolean): void {
+  if (!isRealTelegram || !webApp) return;
+  try {
+    if (on) webApp.enableClosingConfirmation?.();
+    else webApp.disableClosingConfirmation?.();
+  } catch {
+    // старый клиент
   }
 }
 

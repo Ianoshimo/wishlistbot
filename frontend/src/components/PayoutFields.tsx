@@ -1,6 +1,7 @@
 import { uiError, type Me, type PayoutMethod, type UiError } from "../api";
 import { Field } from "./UI";
 import { parseFundraiserLink } from "../linkInput";
+import { normalizePhone } from "../phone";
 
 // Аудит 2026-10-08, А-5 (решение владельца): способ получить деньги
 // выбирается на КАЖДЫЙ подарок сегментами "В магазине" / "СБП" / "Сбор" и
@@ -81,11 +82,11 @@ export function PayoutSegment({
               style={{
                 flex: 1,
                 minWidth: 0,
-                height: 40,
+                height: 44, // А-27: не ниже 44 px
                 borderRadius: 10,
                 border: "none",
                 background: active ? "var(--accent)" : "transparent",
-                color: active ? "#ffffff" : "var(--text-secondary)",
+                color: active ? "var(--on-accent)" : "var(--text-secondary)",
                 fontSize: 14,
                 fontWeight: 600,
                 cursor: disabled ? "not-allowed" : "pointer",
@@ -172,11 +173,24 @@ export function PayoutDetails({
 
 // Клиентская проверка реквизитов. requireBank - банк обязателен, когда
 // способ СБП выбирается заново (у старых подарков до А-5 банка нет).
-export function validatePayout(v: PayoutValues, requireBank: boolean): { error: UiError } | { error: null; fundraiserUrl: string } {
+// Аудит 2026-10-08, А-18: номер проверяется и нормализуется по тому же
+// правилу, что на бэкенде (src/phone.ts) - в phone уходит +7XXXXXXXXXX.
+export function validatePayout(
+  v: PayoutValues,
+  requireBank: boolean,
+): { error: UiError } | { error: null; fundraiserUrl: string; phone: string } {
+  let phone = "";
   if (v.choice === "sbp") {
-    if (v.phone.replace(/\D/g, "").length < 10) {
-      return { error: uiError("invalid_phone", "Укажите номер телефона для перевода") };
+    if (!v.phone.trim()) {
+      return { error: uiError("invalid_phone", "Укажите номер телефона для перевода по СБП") };
     }
+    const normalized = normalizePhone(v.phone);
+    if (!normalized) {
+      return {
+        error: uiError("invalid_phone", "Проверьте номер: нужен российский номер из 10-11 цифр, например +7 900 123-45-67"),
+      };
+    }
+    phone = normalized;
     if (requireBank && !v.bank.trim()) {
       return { error: uiError("sbp_bank_required", "Укажите банк - дарителю нужно выбрать его в переводе по СБП") };
     }
@@ -189,7 +203,7 @@ export function validatePayout(v: PayoutValues, requireBank: boolean): { error: 
     }
     const f = parseFundraiserLink(v.fundraiserUrl);
     if (f.error) return { error: f.error };
-    return { error: null, fundraiserUrl: f.url };
+    return { error: null, fundraiserUrl: f.url, phone };
   }
-  return { error: null, fundraiserUrl: "" };
+  return { error: null, fundraiserUrl: "", phone };
 }

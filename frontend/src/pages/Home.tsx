@@ -4,6 +4,7 @@ import { markStartParamHandled, pendingStartRedirect } from "../telegram";
 import { api } from "../api";
 import { MyWishlist, MY_SLUG_KEY } from "./MyWishlist";
 import { Onboarding } from "./Onboarding";
+import { Loading } from "../components/UI";
 
 // Флоу-итерация-1.md: startapp=w_<slug> ведёт сразу на чужой вишлист,
 // минуя свой собственный. Без параметра и без своего вишлиста ещё -
@@ -45,8 +46,9 @@ export function Home() {
     navigate(startRedirect, { replace: true });
   }, [startRedirect, navigate]);
 
-  if (startRedirect) return null;
-  if (checkingExisting) return null;
+  // А-29: скелетон вместо пустого фона.
+  if (startRedirect) return <Loading />;
+  if (checkingExisting) return <Loading />;
 
   if (showOnboarding) {
     return <Onboarding onStart={() => setShowOnboarding(false)} />;

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { api, apiError, uiError, type Item, type Me, type UiError } from "../api";
 import { ErrorBanner, Field, PrimaryButton, ToggleRow } from "./UI";
-import { MAX_CONTRIBUTORS_CAP } from "./AddItemForm";
+import { MAX_CONTRIBUTORS_CAP, MAX_PRICE_RUB, PRICE_TOO_LARGE_TEXT } from "./AddItemForm";
+import { normalizePhone } from "../phone";
 import { extractUrl, parseProductLink } from "../linkInput";
 import { PayoutDetails, PayoutSegment, toChoice, toMethod, validatePayout, type PayoutValues } from "./PayoutFields";
 
@@ -74,6 +75,7 @@ export function EditItemForm({ item, onSaved }: { item: Item; onSaved: (item: It
     if (product.error) return setError(product.error);
     const nextUrl = product.url;
     if (price && Number(price) <= 0) return setError(uiError("invalid_price", "Цена должна быть больше нуля"));
+    if (price && Number(price) > MAX_PRICE_RUB) return setError(uiError("price_too_large", PRICE_TOO_LARGE_TEXT));
     if (selfPurchased && !money) {
       return setError(uiError("self_purchased_needs_payout", "Подарок уже куплен - выберите, как друзьям перевести деньги: СБП или сбор"));
     }
@@ -86,18 +88,19 @@ export function EditItemForm({ item, onSaved }: { item: Item; onSaved: (item: It
     }
     // У купленного реквизиты не правятся - не проверяем их.
     let fund = "";
+    let phone = "";
     if (!bought) {
       // Банк обязателен, когда СБП выбирают заново (у старых подарков его нет).
       const checked = validatePayout(payout, methodChanged);
       if (checked.error) return setError(checked.error);
       fund = checked.fundraiserUrl;
+      phone = checked.phone;
     }
 
     // Шлём только изменённое - бэкенд и так сравнивает с текущим, но
     // меньше шансов упереться в блокировку на ровном месте.
     const nextPrice = price ? Math.round(Number(price) * 100) : null;
     const nextTitle = title.trim();
-    const phone = payout.phone.trim();
     const bank = payout.bank.trim();
     setSaving(true);
     setError(null);
@@ -109,7 +112,7 @@ export function EditItemForm({ item, onSaved }: { item: Item; onSaved: (item: It
         ...(priority !== item.priority ? { priority } : {}),
         ...(selfPurchased !== item.selfPurchased ? { selfPurchased } : {}),
         ...(methodChanged ? { payoutMethod: toMethod(payout.choice) } : {}),
-        ...(!bought && payout.choice === "sbp" && phone !== (item.sbpPhone ?? "") ? { sbpPhone: phone } : {}),
+        ...(!bought && payout.choice === "sbp" && phone && phone !== normalizePhone(item.sbpPhone ?? "") ? { sbpPhone: phone } : {}),
         ...(!bought && payout.choice === "sbp" && bank && bank !== (item.sbpBank ?? "") ? { sbpBank: bank } : {}),
         ...(!bought && payout.choice === "fundraiser" && fund !== (item.fundraiserUrl ?? "") ? { fundraiserUrl: fund } : {}),
         ...(n !== item.maxContributors ? { maxContributors: n } : {}),

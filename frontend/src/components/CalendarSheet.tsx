@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { absoluteApiUrl, api, apiError, formatOccasionDate, trackEvent, uiError, type UiError } from "../api";
 import { CopyRow, ErrorBanner, Field, PrimaryButton } from "./UI";
-import { openExternalLink } from "../telegram";
+import { isInsideTelegram, openExternalLink } from "../telegram";
 
 // Содержимое bottom sheet "Календарь" (CLAUDE.md, 2026-10-02, "продумай
 // бизнесово как пользователю будет удобно синхронизировать календари") -
@@ -91,6 +91,8 @@ export function CalendarSheet({
   // рядом - на случай календаря, который webcal не понимает.
   const httpsUrl = calendarToken ? absoluteApiUrl(`/api/calendar/${calendarToken}.ics`) : null;
   const webcalUrl = httpsUrl ? httpsUrl.replace(/^https?:/, "webcal:") : null;
+  // А-22: промежуточная страница оформления подписки (backend routes/calendar.ts).
+  const subscribePageUrl = calendarToken ? absoluteApiUrl(`/api/calendar/${calendarToken}/subscribe`) : null;
 
   return (
     <div style={{ padding: "4px 20px 24px", display: "flex", flexDirection: "column", gap: 24 }}>
@@ -119,13 +121,15 @@ export function CalendarSheet({
             </div>
             <button
               onClick={() => setEditing(true)}
-              style={{ height: 36, padding: "0 12px", borderRadius: 10, background: "var(--accent-soft)", color: "var(--accent)", border: "none", fontSize: 13, fontWeight: 600 }}
+              className="hit44"
+              style={{ height: 36, padding: "0 12px", borderRadius: 10, background: "var(--accent-soft)", color: "var(--accent-text)", border: "none", fontSize: 13, fontWeight: 600 }}
             >
               Изменить
             </button>
             <button
               onClick={remove}
               aria-label="Убрать повод"
+              className="hit44"
               style={{ height: 36, padding: "0 12px", borderRadius: 10, background: "transparent", color: "var(--danger)", border: "none", fontSize: 13, fontWeight: 600 }}
             >
               Убрать
@@ -157,10 +161,14 @@ export function CalendarSheet({
               href={webcalUrl}
               onClick={(e) => {
                 e.preventDefault();
-                // webcal:// Telegram открыть не умеет - внутри него уходим на
-                // https-версию фида, календарь телефона предложит подписку.
                 trackEvent("calendar_subscribe_clicked");
-                openExternalLink(webcalUrl, httpsUrl);
+                // Аудит 2026-10-08, А-22: webcal:// Telegram открыть не умеет,
+                // а https-ссылка на .ics открывалась как файл - разовый импорт
+                // вместо подписки. Внутри Telegram открываем страницу
+                // подписки (во внешнем браузере), с неё кнопка ведёт на
+                // webcal:// (iPhone/Mac) или в Google Календарь (Android).
+                if (isInsideTelegram() && subscribePageUrl) openExternalLink(subscribePageUrl);
+                else openExternalLink(webcalUrl, subscribePageUrl ?? httpsUrl);
               }}
               style={{
                 display: "flex",
@@ -176,6 +184,11 @@ export function CalendarSheet({
             >
               Подписаться на календарь
             </a>
+            {isInsideTelegram() && (
+              <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: -4 }}>
+                Откроется страница в браузере: на iPhone нажмите «Подписаться в Календаре», на Android - «Google Календарь».
+              </div>
+            )}
             <CopyRow label="Ссылка (если подписка выше не открылась сама)" value={httpsUrl} />
           </>
         ) : (
