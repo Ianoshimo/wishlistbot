@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { api, apiError, uiError, type Item, type UiError } from "../api";
 import { ErrorBanner, Field, PrimaryButton } from "./UI";
 import { MAX_CONTRIBUTORS_CAP } from "./AddItemForm";
+import { extractUrl, parseFundraiserLink, parseProductLink } from "../linkInput";
 
 // Редактирование позиции (CLAUDE.md, 2026-10-01; с 2026-10-07 - все поля,
 // ТЗ `Продукт/тз-редактирование-всех-полей.md`): всё, что задаётся при
@@ -87,14 +88,19 @@ export function EditItemForm({ item, onSaved }: { item: Item; onSaved: (item: It
   // Кто-то уже присоединился: classic-бронь или хотя бы одна доля.
   const hasGivers = item.maxContributors > 1 ? item.contributorsCount > 0 : item.status !== "available";
   const modeLocked = bought || hasGivers;
-  const urlChanged = url.trim() !== item.url;
+  // Сравниваем уже извлечённую ссылку: вставка "Смотри https://<та же>"
+  // - не изменение ссылки.
+  const urlChanged = (extractUrl(url) ?? url.trim()) !== item.url;
 
   const submit = async () => {
-    const nextUrl = url.trim();
-    if (!/^https?:\/\/.+/i.test(nextUrl)) {
-      setError(uiError("invalid_url", "Ссылка должна начинаться с http:// или https://"));
+    // Аудит 2026-10-08, А-10/А-6: ссылка вырезается из текста
+    // "Поделиться", номер телефона распознаётся, без http:// в текстах.
+    const product = parseProductLink(url);
+    if (product.error) {
+      setError(product.error);
       return;
     }
+    const nextUrl = product.url;
     if (price && Number(price) <= 0) {
       setError(uiError("invalid_price", "Цена должна быть больше нуля"));
       return;
@@ -113,10 +119,14 @@ export function EditItemForm({ item, onSaved }: { item: Item; onSaved: (item: It
       return;
     }
     // QB4-3: ссылка на сбор - только у складчины без "уже купил сам".
-    const fund = split && !selfPurchased ? fundraiserUrl.trim() : "";
-    if (fund && !/^https?:\/\/.+/i.test(fund)) {
-      setError(uiError("invalid_fundraiser_url", "Ссылка на сбор должна начинаться с http:// или https://"));
-      return;
+    let fund = split && !selfPurchased ? fundraiserUrl.trim() : "";
+    if (fund) {
+      const f = parseFundraiserLink(fund);
+      if (f.error) {
+        setError(f.error);
+        return;
+      }
+      fund = f.url;
     }
     if (split && !selfPurchased && !fund) {
       setError(uiError("fundraiser_url_required", "Чтобы скинуться, вставьте ссылку на сбор из приложения банка"));
@@ -152,8 +162,12 @@ export function EditItemForm({ item, onSaved }: { item: Item; onSaved: (item: It
 
   return (
     <>
-      <div style={{ padding: "4px 20px 20px", display: "flex", flexDirection: "column", gap: 20 }}>
-        <Field label="Ссылка на товар" value={url} onChange={setUrl} placeholder="https://ozon.ru/product/..." type="url" />
+      {/* Аудит 2026-10-08, А-4: ошибка снимается при любом изменении формы. */}
+      <div
+        onChangeCapture={() => setError(null)}
+        style={{ padding: "4px 20px 20px", display: "flex", flexDirection: "column", gap: 20 }}
+      >
+        <Field label="Ссылка на товар" value={url} onChange={setUrl} placeholder="Ссылка или текст из «Поделиться»" type="url" />
         {urlChanged && (
           <ToggleRow
             checked={refreshPreview}
@@ -226,7 +240,7 @@ export function EditItemForm({ item, onSaved }: { item: Item; onSaved: (item: It
         {/* У купленной режим не меняется - общей подсказки выше достаточно. */}
         {split && !selfPurchased && !bought && (
           <>
-            <Field label="Ссылка на сбор в банке" value={fundraiserUrl} onChange={setFundraiserUrl} placeholder="https://..." type="url" />
+            <Field label="Ссылка на сбор в банке" value={fundraiserUrl} onChange={setFundraiserUrl} placeholder="Ссылка из приложения банка" type="url" />
             <div style={{ ...note, marginTop: -10 }}>
               Создайте сбор в приложении своего банка и вставьте ссылку на него. Ссылку увидят только те, кто присоединится.
             </div>

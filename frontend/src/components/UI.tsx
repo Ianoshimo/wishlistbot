@@ -402,6 +402,20 @@ export function BottomSheet({
           animation: "wishlistbot-sheet-up 0.2s ease-out",
         }}
       >
+        {/* Аудит 2026-10-08, А-8: шапка (ручка, заголовок, "Закрыть") -
+            липкая: раньше прокручивалась вместе с длинной формой, и было
+            не видно, что это за экран и как его закрыть. Фон нужен, чтобы
+            поля не просвечивали под ней. */}
+        <div
+          style={{
+            position: "sticky",
+            top: 0,
+            zIndex: 2,
+            background: "var(--bg)",
+            borderTopLeftRadius: 20,
+            borderTopRightRadius: 20,
+          }}
+        >
         <div style={{ display: "flex", justifyContent: "center", padding: "10px 0 0" }}>
           <div style={{ width: 36, height: 4, borderRadius: 999, background: "var(--border)" }} />
         </div>
@@ -428,6 +442,7 @@ export function BottomSheet({
               <path d="M6 6l12 12M18 6L6 18" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             </svg>
           </button>
+        </div>
         </div>
         {children}
       </div>

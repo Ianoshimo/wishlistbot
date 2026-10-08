@@ -1,4 +1,5 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
+import { preprocessUrlInput } from "../services/linkInput.js";
 import { z } from "zod";
 import { InlineKeyboard } from "grammy";
 import { db } from "../db.js";
@@ -12,6 +13,8 @@ import { detectStore } from "../services/linkPreview.js";
 import { MAX_CONTRIBUTORS_CAP, PHONE_RE } from "./wishlists.js";
 import { planItemEdit } from "../services/itemEdit.js";
 import { fetchPreviewWithFallback } from "../services/itemCreate.js";
+import { purchaseNoticeText } from "../services/purchaseNotice.js";
+import { env } from "../env.js";
 
 // Аналитика: "позиция стала bought" - с датой повода вишлиста (месяц-день),
 // чтобы покупку можно было привязать к событию. Повод дочитывается
@@ -57,18 +60,31 @@ function requireTelegramId(req: FastifyRequest, bodyTelegramId: string | undefin
 // которым можно переслать благодарность.
 async function notifyOwnerPurchased(app: FastifyInstance, wishlistId: string, itemId: string, thanksAvailable: boolean) {
   try {
-    const wishlist = await db.wishlist.findUnique({
-      where: { id: wishlistId },
-      select: { owner: { select: { telegramId: true } } },
+    // Аудит 2026-10-08, А-12: название подарка и списка в тексте, разный
+    // текст для покупки и перевода денег (services/purchaseNotice.ts),
+    // кнопка открыть именно этот вишлист. Дарителя по-прежнему не называем.
+    const item = await db.item.findUnique({
+      where: { id: itemId },
+      select: {
+        title: true,
+        selfPurchased: true,
+        fundraiserUrl: true,
+        maxContributors: true,
+        wishlist: { select: { id: true, slug: true, title: true, owner: { select: { telegramId: true } } } },
+      },
     });
-    if (!wishlist) return;
-    await bot.api.sendMessage(
-      wishlist.owner.telegramId.toString(),
-      "🎁 Один из подарков в вашем вишлисте отмечен как купленный",
-      thanksAvailable
-        ? { reply_markup: new InlineKeyboard().text("🎁 Поблагодарить дарителя", `thank:${itemId}`) }
-        : undefined,
-    );
+    if (!item || item.wishlist.id !== wishlistId) return;
+    const text = purchaseNoticeText({
+      itemTitle: item.title,
+      wishlistTitle: item.wishlist.title,
+      selfPurchased: item.selfPurchased,
+      fundraiser: Boolean(item.fundraiserUrl),
+      split: item.maxContributors > 1,
+    });
+    const keyboard = new InlineKeyboard();
+    if (thanksAvailable) keyboard.text("🎁 Поблагодарить дарителя", `thank:${itemId}`).row();
+    keyboard.webApp("Открыть вишлист", `${env.MINI_APP_URL.replace(/\/+$/, "")}/w/${item.wishlist.slug}`);
+    await bot.api.sendMessage(item.wishlist.owner.telegramId.toString(), text, { reply_markup: keyboard });
   } catch (err) {
     app.log.warn({ err }, "Не удалось отправить уведомление о покупке");
   }
@@ -307,11 +323,11 @@ export async function itemRoutes(app: FastifyInstance) {
         telegramId: z.string().optional(),
         title: z.string().min(1).optional(),
         price: z.number().int().positive().nullable().optional(),
-        url: z.string().url().regex(/^https?:\/\//i, "invalid_url_scheme").optional(),
+        url: z.preprocess(preprocessUrlInput, z.string().url().regex(/^https?:\/\//i, "invalid_url_scheme")).optional(),
         // ТЗ блок 4, п.3: число участников складчины и ссылка на сбор
         // меняются и после создания. null у ссылки - убрать её.
         maxContributors: z.number().int().min(1).max(MAX_CONTRIBUTORS_CAP).optional(),
-        fundraiserUrl: z.string().url().regex(/^https?:\/\//i, "invalid_url_scheme").nullable().optional(),
+        fundraiserUrl: z.preprocess(preprocessUrlInput, z.string().url().regex(/^https?:\/\//i, "invalid_url_scheme")).nullable().optional(),
         // "Уже купил(а) сам(а)" и номер СБП - как при создании.
         selfPurchased: z.boolean().optional(),
         sbpPhone: z.string().regex(PHONE_RE, "invalid_phone").optional(),

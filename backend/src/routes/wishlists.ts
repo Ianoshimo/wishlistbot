@@ -1,4 +1,6 @@
 import type { FastifyInstance, FastifyRequest } from "fastify";
+import { occasionCategory } from "../services/occasionCategory.js";
+import { preprocessUrlInput } from "../services/linkInput.js";
 import { z } from "zod";
 import { db } from "../db.js";
 import { resolveItem, serializeItemView } from "../services/itemView.js";
@@ -241,7 +243,8 @@ export async function wishlistRoutes(app: FastifyInstance) {
         track("occasion_set", {
           userId: wishlist.ownerId,
           wishlistId: wishlist.id,
-          props: { title: updated.occasionTitle, monthDay: monthDay(updated.occasionDate) },
+          // А-15: не текст повода (там имена людей), а только категория.
+          props: { category: occasionCategory(updated.occasionTitle), monthDay: monthDay(updated.occasionDate) },
         });
       } else if (wishlist.occasionTitle) {
         track("occasion_cleared", { userId: wishlist.ownerId, wishlistId: wishlist.id, props: {} });
@@ -293,7 +296,9 @@ export async function wishlistRoutes(app: FastifyInstance) {
         // валидным URL (валиден синтаксически, схема не ограничена) -
         // ограничиваем до http(s), иначе значение долетает до href кнопки
         // "Перейти в магазин" с target="_blank".
-        url: z.string().url().regex(/^https?:\/\//i, "invalid_url_scheme"),
+        // Аудит 2026-10-08, А-10: текст из "Поделиться" маркетплейса
+        // ("Смотри на Ozon https://...") - вырезаем первую ссылку.
+        url: z.preprocess(preprocessUrlInput, z.string().url().regex(/^https?:\/\//i, "invalid_url_scheme")),
         title: z.string().optional(),
         price: z.number().int().positive().optional(), // копейки
         // "Уже купил(а) сам(а)" (решение 2026-10-02, по просьбе
@@ -307,7 +312,7 @@ export async function wishlistRoutes(app: FastifyInstance) {
         maxContributors: z.number().int().min(1).max(MAX_CONTRIBUTORS_CAP).optional(),
         // Сбор по ссылке банка (ТЗ блок 4) - для ещё не купленного
         // дорогого подарка. Та же защита схемы, что и у ссылки на товар (Б-8).
-        fundraiserUrl: z.string().url().regex(/^https?:\/\//i, "invalid_url_scheme").optional(),
+        fundraiserUrl: z.preprocess(preprocessUrlInput, z.string().url().regex(/^https?:\/\//i, "invalid_url_scheme")).optional(),
       })
       .parse(req.body);
 

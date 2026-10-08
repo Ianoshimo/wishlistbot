@@ -51,6 +51,15 @@ export function SharedWishlist() {
     }
   }, [wishlist, navigate]);
 
+  // А-3: даритель, пришедший по ссылке, заводит свой список за один тап -
+  // вирусная петля "получил ссылку -> завёл свой". "/" после этого
+  // показывает свой список (start_param уже обработан, см. telegram.ts).
+  const openOwnWishlist = () => {
+    trackEvent("own_wishlist_cta_clicked", { from: "shared_wishlist" });
+    markStartParamHandled();
+    navigate("/", { state: { openOwn: true } });
+  };
+
   const openList = () => {
     localStorage.setItem(seenKey(slug), "1");
     setShowInvite(false);
@@ -195,7 +204,7 @@ export function SharedWishlist() {
               </div>
               {(item.selfPurchased || item.hasFundraiser) && (
                 <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                  {item.selfPurchased ? "Уже куплено · перевод по СБП" : "Сбор по ссылке банка"}
+                  {item.selfPurchased ? "Подарок деньгами · перевод по СБП" : "Сбор по ссылке банка"}
                   {item.maxContributors > 1 && ` · участвуют ${item.contributorsCount} из ${item.maxContributors}`}
                 </div>
               )}
@@ -203,6 +212,26 @@ export function SharedWishlist() {
             <PriorityStar active={item.priority} editable={false} />
           </Link>
         ))}
+      </div>
+      <div style={{ padding: "4px 16px 20px", flexShrink: 0 }}>
+        <button
+          onClick={openOwnWishlist}
+          style={{
+            width: "100%",
+            minHeight: 50,
+            borderRadius: 14,
+            background: "var(--surface)",
+            border: "1px solid var(--border)",
+            color: "var(--accent)",
+            fontSize: 15,
+            fontWeight: 600,
+          }}
+        >
+          Хочу такой же вишлист
+        </button>
+        <div style={{ fontSize: 12, color: "var(--text-secondary)", textAlign: "center", marginTop: 8 }}>
+          Соберите свой список желаний - и друзья будут знать, что вам подарить
+        </div>
       </div>
       {/* Кнопка "Собрать деньгами на подарок" убрана из итерации 1 - см.
           MyWishlist.tsx для того же примечания. */}

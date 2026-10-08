@@ -323,7 +323,7 @@ export function MyWishlist() {
                     </div>
                     {(item.selfPurchased || item.hasFundraiser) && (
                       <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                        {item.selfPurchased ? "Уже куплено · перевод по СБП" : "Сбор по ссылке банка"}
+                        {item.selfPurchased ? "Подарок деньгами · перевод по СБП" : "Сбор по ссылке банка"}
                         {item.maxContributors > 1 && ` · участвуют ${item.contributorsCount} из ${item.maxContributors}`}
                       </div>
                     )}

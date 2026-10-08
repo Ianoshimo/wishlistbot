@@ -1,4 +1,5 @@
 import { Bot, InlineKeyboard } from "grammy";
+import { extractUrl } from "../services/linkInput.js";
 import { env } from "../env.js";
 import { db } from "../db.js";
 import { getOrCreateWishlist } from "../services/wishlistService.js";
@@ -58,21 +59,22 @@ bot.command("start", async (ctx) => {
 // переписки один на один с ботом (не переживает рестарт процесса, это
 // ожидаемо - переслать можно ещё раз).
 const pendingLinks = new Map<number, string>();
-const URL_RE = /https?:\/\/[^\s]+/i;
 
 bot.on("message:text", async (ctx) => {
   if (ctx.chat.type !== "private") return;
   const text = ctx.message.text;
   if (text.startsWith("/")) return; // команды (/start и т.п.) - не ссылки
 
-  const match = text.match(URL_RE);
-  if (!match) return;
+  // Аудит 2026-10-08, А-10: общий разбор с мини-аппом и API - хвостовая
+  // пунктуация ("...https://ozon.ru/t/Ab.") больше не попадает в ссылку.
+  const extracted = extractUrl(text);
+  if (!extracted) return;
 
   // Беклог Б-8: та же защита от произвольной схемы, что и в
   // routes/wishlists.ts - ссылка пойдёт прямо в href "Перейти в магазин".
   let url: URL;
   try {
-    url = new URL(match[0]);
+    url = new URL(extracted);
   } catch {
     return;
   }

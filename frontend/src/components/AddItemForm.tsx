@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, apiError, uiError, type Item, type UiError } from "../api";
 import { ErrorBanner, Field, PrimaryButton } from "./UI";
+import { parseFundraiserLink, parseProductLink } from "../linkInput";
 
 // Форма "Добавить позицию" - раньше отдельная страница (/w/:slug/add),
 // теперь содержимое bottom sheet на MyWishlist (CLAUDE.md, 2026-10-01:
@@ -12,7 +13,9 @@ export const MAX_CONTRIBUTORS_CAP = 100;
 // Подсказка про сбор появляется для подарков от этой цены (в рублях).
 const FUNDRAISER_HINT_RUB = 5000;
 
-function validationError(
+type Validated = { error: UiError } | { error: null; url: string; fundraiserUrl: string };
+
+function validate(
   url: string,
   price: string,
   selfPurchased: boolean,
@@ -20,26 +23,37 @@ function validationError(
   split: boolean,
   maxContributors: string,
   fundraiserUrl: string,
-): UiError | null {
+): Validated {
   // Ключи (первый аргумент) - машинный код ошибки для аналитики (QB4-5).
-  if (!/^https?:\/\/.+/i.test(url)) return uiError("invalid_url", "Ссылка должна начинаться с http:// или https://");
-  if (price && Number(price) <= 0) return uiError("invalid_price", "Цена должна быть больше нуля");
+  // Аудит 2026-10-08, А-10/А-6: ссылка вырезается из текста "Поделиться",
+  // номер телефона распознаётся, тексты ошибок - без http://.
+  const product = parseProductLink(url);
+  if (product.error) return { error: product.error };
+  if (price && Number(price) <= 0) return { error: uiError("invalid_price", "Цена должна быть больше нуля") };
   if (selfPurchased && sbpPhone.replace(/\D/g, "").length < 10) {
-    return uiError("invalid_phone", "Укажите номер телефона для перевода");
+    return { error: uiError("invalid_phone", "Укажите номер телефона для перевода") };
   }
+  let fund = "";
   if (split) {
     const n = Number(maxContributors);
     if (!Number.isInteger(n) || n < 2 || n > MAX_CONTRIBUTORS_CAP) {
-      return uiError("invalid_contributors", `Сколько человек может скинуться - от 2 до ${MAX_CONTRIBUTORS_CAP}`);
+      return { error: uiError("invalid_contributors", `Сколько человек может скинуться - от 2 до ${MAX_CONTRIBUTORS_CAP}`) };
     }
-    if (!selfPurchased && !/^https?:\/\/.+/i.test(fundraiserUrl)) {
-      return uiError(
-        "fundraiser_url_required",
-        "Вставьте ссылку на сбор из приложения банка - по ней друзья будут скидываться",
-      );
+    if (!selfPurchased) {
+      if (!fundraiserUrl.trim()) {
+        return {
+          error: uiError(
+            "fundraiser_url_required",
+            "Вставьте ссылку на сбор из приложения банка - по ней друзья будут скидываться",
+          ),
+        };
+      }
+      const f = parseFundraiserLink(fundraiserUrl);
+      if (f.error) return { error: f.error };
+      fund = f.url;
     }
   }
-  return null;
+  return { error: null, url: product.url, fundraiserUrl: fund };
 }
 
 export function AddItemForm({ slug, onAdded }: { slug: string; onAdded: (item: Item) => void }) {
@@ -72,22 +86,25 @@ export function AddItemForm({ slug, onAdded }: { slug: string; onAdded: (item: I
   }, []);
 
   const submit = async () => {
-    const invalid = validationError(url, price, selfPurchased, sbpPhone, split, maxContributors, fundraiserUrl);
-    if (invalid) {
-      setError(invalid);
+    const checked = validate(url, price, selfPurchased, sbpPhone, split, maxContributors, fundraiserUrl);
+    if (checked.error) {
+      setError(checked.error);
       return;
     }
+    // Показываем, что именно сохранится (ссылка без окружающего текста).
+    setUrl(checked.url);
+    if (checked.fundraiserUrl) setFundraiserUrl(checked.fundraiserUrl);
     setSaving(true);
     setError(null);
     try {
       const item = await api.addItem(slug, {
-        url,
+        url: checked.url,
         title: title || undefined,
         price: price ? Math.round(Number(price) * 100) : undefined,
         selfPurchased: selfPurchased || undefined,
         sbpPhone: selfPurchased ? sbpPhone.trim() : undefined,
         maxContributors: split ? Number(maxContributors) : undefined,
-        fundraiserUrl: split && !selfPurchased ? fundraiserUrl.trim() : undefined,
+        fundraiserUrl: checked.fundraiserUrl || undefined,
       });
       onAdded(item);
     } catch (err) {
@@ -99,8 +116,14 @@ export function AddItemForm({ slug, onAdded }: { slug: string; onAdded: (item: I
 
   return (
     <>
-      <div style={{ padding: "4px 20px 20px", display: "flex", flexDirection: "column", gap: 20 }}>
-        <Field label="Ссылка на товар" value={url} onChange={setUrl} placeholder="https://ozon.ru/product/..." type="url" />
+      {/* Аудит 2026-10-08, А-4: ошибка проверки снимается при любом
+          изменении формы (ввод в поле, переключатель) - раньше висела под
+          уже исправленным полем до следующего нажатия "Добавить". */}
+      <div
+        onChangeCapture={() => setError(null)}
+        style={{ padding: "4px 20px 20px", display: "flex", flexDirection: "column", gap: 20 }}
+      >
+        <Field label="Ссылка на товар" value={url} onChange={setUrl} placeholder="Ссылка или текст из «Поделиться»" type="url" />
         <Field label="Название (необязательно)" value={title} onChange={setTitle} placeholder="Например: наушники Sony" />
         <Field label="Цена, ₽ (необязательно)" value={price} onChange={setPrice} placeholder="6990" type="number" min="0" />
 
@@ -190,7 +213,7 @@ export function AddItemForm({ slug, onAdded }: { slug: string; onAdded: (item: I
               label="Ссылка на сбор в банке"
               value={fundraiserUrl}
               onChange={setFundraiserUrl}
-              placeholder="https://..."
+              placeholder="Ссылка из приложения банка"
               type="url"
             />
             <div style={{ fontSize: 12.5, color: "var(--text-secondary)", marginTop: -10 }}>

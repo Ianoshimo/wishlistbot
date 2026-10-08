@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import { Prisma } from "@prisma/client";
 import { db } from "../db.js";
 import { env } from "../env.js";
+import type { OccasionCategory } from "./occasionCategory.js";
 
 // Продуктовая аналитика (2026-10-07) - события пишутся в собственную
 // таблицу Event (см. schema.prisma), не в сторонний сервис. Отчёт -
@@ -41,8 +42,10 @@ export interface EventProps {
     contributors: number;
     occasionMonthDay: string | null;
   };
-  // monthDay - "MM-DD", без года: повод обычно годовой.
-  occasion_set: { title: string; monthDay: string };
+  // monthDay - "MM-DD", без года: повод обычно годовой. Аудит 2026-10-08,
+  // А-15: вместо свободного текста повода (там имена людей) - только
+  // категория из закрытого списка (services/occasionCategory.ts).
+  occasion_set: { category: OccasionCategory; monthDay: string };
   occasion_cleared: Record<string, never>;
   // Чужой вишлист открыт не владельцем - максимум одно событие на
   // зрителя+вишлист в сутки (dedupeKey).
@@ -118,6 +121,9 @@ export const CLIENT_EVENTS: Record<string, readonly string[]> = {
   error_shown: ["code", "screen"],
   wishlist_switched: [],
   onboarding_create_clicked: [],
+  // Аудит 2026-10-08, А-3: даритель с чужого списка пошёл заводить свой
+  // (кнопка "Хочу такой же вишлист") - вирусная петля.
+  own_wishlist_cta_clicked: ["from"],
 };
 
 const CLIENT_LIMIT_PER_MIN = 120;

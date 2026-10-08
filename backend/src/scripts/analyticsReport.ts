@@ -135,13 +135,14 @@ async function main() {
   }
   if (occ.length === 0) console.log("  поводы ещё не заданы");
 
-  const topTitles = await db.$queryRaw<{ title: string; c: bigint }[]>`
-    SELECT lower(trim(props->>'title')) AS title, COUNT(*) AS c FROM "Event"
+  // А-15: текст повода в события больше не пишется - только категория.
+  const topCategories = await db.$queryRaw<{ category: string; c: bigint }[]>`
+    SELECT coalesce(props->>'category', 'other') AS category, COUNT(*) AS c FROM "Event"
     WHERE type = 'occasion_set' AND "createdAt" >= ${since}
     GROUP BY 1 ORDER BY c DESC LIMIT 10`;
-  if (topTitles.length > 0) {
-    console.log("  частые названия поводов за период:");
-    for (const t of topTitles) console.log(`    ${t.title} - ${n(t.c)}`);
+  if (topCategories.length > 0) {
+    console.log("  категории поводов за период:");
+    for (const t of topCategories) console.log(`    ${t.category} - ${n(t.c)}`);
   }
 
   // ТЗ блок 4: активность, клиентские события, полноэкранный режим, ошибки.
