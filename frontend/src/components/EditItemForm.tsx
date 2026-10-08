@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, apiError, uiError, type Item, type Me, type UiError } from "../api";
 import { ErrorBanner, Field, PrimaryButton, ToggleRow } from "./UI";
-import { MAX_CONTRIBUTORS_CAP, MAX_PRICE_RUB, PRICE_TOO_LARGE_TEXT } from "./AddItemForm";
+import { ITEM_TITLE_MAX, MAX_CONTRIBUTORS_CAP, MAX_PRICE_RUB, PRICE_TOO_LARGE_TEXT } from "./AddItemForm";
 import { normalizePhone } from "../phone";
 import { extractUrl, parseProductLink } from "../linkInput";
 import { PayoutDetails, PayoutSegment, toChoice, toMethod, validatePayout, type PayoutValues } from "./PayoutFields";
@@ -77,14 +77,14 @@ export function EditItemForm({ item, onSaved }: { item: Item; onSaved: (item: It
     if (price && Number(price) <= 0) return setError(uiError("invalid_price", "Цена должна быть больше нуля"));
     if (price && Number(price) > MAX_PRICE_RUB) return setError(uiError("price_too_large", PRICE_TOO_LARGE_TEXT));
     if (selfPurchased && !money) {
-      return setError(uiError("self_purchased_needs_payout", "Подарок уже куплен - выберите, как друзьям перевести деньги: СБП или сбор"));
+      return setError(uiError("self_purchased_needs_payout", "Подарок уже куплен — выберите, как друзьям перевести деньги: СБП или сбор"));
     }
     const n = split && money ? Number(maxContributors) : 1;
     if (split && money && (!Number.isInteger(n) || n < 2 || n > MAX_CONTRIBUTORS_CAP)) {
-      return setError(uiError("invalid_contributors", `Сколько человек может скинуться - от 2 до ${MAX_CONTRIBUTORS_CAP}`));
+      return setError(uiError("invalid_contributors", `Сколько человек может скинуться — от 2 до ${MAX_CONTRIBUTORS_CAP}`));
     }
     if (item.maxContributors > 1 && n > 1 && n < item.contributorsCount) {
-      return setError(uiError("contributors_below_joined", `Уже участвуют ${item.contributorsCount} - меньше мест поставить нельзя`));
+      return setError(uiError("contributors_below_joined", `Уже участвуют ${item.contributorsCount} — меньше мест поставить нельзя`));
     }
     // У купленного реквизиты не правятся - не проверяем их.
     let fund = "";
@@ -145,23 +145,23 @@ export function EditItemForm({ item, onSaved }: { item: Item; onSaved: (item: It
             hint="Подтянем фото из магазина, как при добавлении. Название тоже обновится, если вы его не меняли."
           />
         )}
-        <Field label="Название" value={title} onChange={setTitle} placeholder="Например: наушники Sony" />
+        <Field label="Название" value={title} onChange={setTitle} placeholder="Например: наушники Sony" maxLength={ITEM_TITLE_MAX} />
         <Field label="Цена, ₽ (необязательно)" value={price} onChange={setPrice} placeholder="6990" type="number" min="0" />
 
         <ToggleRow
           checked={priority}
           onChange={setPriority}
           title="Хочу больше всего"
-          hint="Позиция будет наверху списка со звёздочкой - друзья увидят её первой"
+          hint="Подарок будет наверху списка со звёздочкой — друзья увидят его первым"
         />
 
         {modeLocked && (
           <div style={{ ...note, padding: "10px 12px", borderRadius: 12, background: "var(--accent-soft)" }}>
             {bought
-              ? "Подарок уже куплен - менять можно только ссылку, название, цену, фото и приоритет."
+              ? "Подарок уже куплен — менять можно только ссылку, название, цену, фото и приоритет."
               : item.maxContributors > 1
-                ? "Уже есть участники - способ подарить и складчину не меняем, чтобы не подвести дарителей. Реквизиты и число мест исправить можно."
-                : "Подарок уже забронирован - способ подарить не меняем, чтобы не подвести дарителя. Реквизиты исправить можно - даритель увидит новые."}
+                ? "Уже есть участники — способ подарить и складчину не меняем, чтобы не подвести дарителей. Реквизиты и число мест исправить можно."
+                : "Подарок уже забронирован — способ подарить не меняем, чтобы не подвести дарителя. Реквизиты исправить можно — даритель увидит новые."}
           </div>
         )}
 
@@ -172,7 +172,7 @@ export function EditItemForm({ item, onSaved }: { item: Item; onSaved: (item: It
             if (v && payout.choice === "none") patchPayout({ choice: "sbp" });
           }}
           disabled={modeLocked}
-          title="Я уже купил этот подарок"
+          title="Этот подарок уже у меня"
           hint="Друзья увидят, что в магазин идти не нужно, и переведут деньги выбранным способом"
         />
 
@@ -186,7 +186,7 @@ export function EditItemForm({ item, onSaved }: { item: Item; onSaved: (item: It
         />
         <PayoutDetails values={payout} set={patchPayout} savedProfile={profile} disabled={bought} />
         {payout.choice === "sbp" && !bought && !payout.bank.trim() && !methodChanged && (
-          <div style={{ ...note, marginTop: -10 }}>Банк не указан - дарители увидят «уточните у получателя». Лучше указать.</div>
+          <div style={{ ...note, marginTop: -10 }}>Банк не указан — дарители увидят «уточните у получателя». Лучше указать.</div>
         )}
 
         {money && (
@@ -206,7 +206,7 @@ export function EditItemForm({ item, onSaved }: { item: Item; onSaved: (item: It
         {split && money && !bought && (
           <>
             <Field
-              label={`Сколько человек может скинуться (2-${MAX_CONTRIBUTORS_CAP})`}
+              label={`Сколько человек может скинуться (2–${MAX_CONTRIBUTORS_CAP})`}
               value={maxContributors}
               onChange={setMaxContributors}
               type="number"
@@ -225,7 +225,7 @@ export function EditItemForm({ item, onSaved }: { item: Item; onSaved: (item: It
         {error && <ErrorBanner {...error} screen="edit_item" revealParent />}
         {saving && urlChanged && refreshPreview && (
           <div style={{ fontSize: 12, color: "var(--text-secondary)", textAlign: "center" }}>
-            Подтягиваем фото из магазина - это может занять до 30 секунд
+            Подтягиваем фото из магазина — это может занять до 30 секунд
           </div>
         )}
         <PrimaryButton onClick={submit} disabled={!url || saving} style={{ width: "100%" }}>

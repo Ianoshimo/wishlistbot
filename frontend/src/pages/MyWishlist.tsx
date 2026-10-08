@@ -257,7 +257,7 @@ export function MyWishlist() {
         >
           <div className="font-display" style={{ fontSize: 18, fontWeight: 700 }}>Пока пусто</div>
           <div style={{ fontSize: 14, color: "var(--text-secondary)", maxWidth: 260 }}>
-            Добавьте ссылку на первый подарок - и друзья увидят, что вам подарить
+            Добавьте ссылку на первый подарок — и друзья увидят, что вам подарить
           </div>
           <button
             onClick={() => setAddOpen(true)}
@@ -273,7 +273,7 @@ export function MyWishlist() {
               border: "none",
             }}
           >
-            Добавить позицию
+            Добавить подарок
           </button>
         </div>
       ) : (
@@ -321,7 +321,7 @@ export function MyWishlist() {
                 >
                   <Thumbnail src={item.imageUrl} store={item.store} />
                   <div style={{ flexGrow: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 15, fontWeight: 600 }}>
+                    <div className="clamp2" style={{ fontSize: 15, fontWeight: 600 }}>
                       {item.title ?? item.url}
                     </div>
                     {/* QA-7: бейдж статуса - в строке с ценой, а не отдельной
@@ -353,7 +353,7 @@ export function MyWishlist() {
                       trackEvent("form_opened", { form: "edit_item" });
                       setEditingItem(item);
                     }}
-                    aria-label="Редактировать позицию"
+                    aria-label="Редактировать подарок"
                     style={{
                       width: 44,
                       height: 44,
@@ -395,7 +395,7 @@ export function MyWishlist() {
         />
       )}
 
-      <BottomSheet open={addOpen} onClose={() => setAddOpen(false)} title="Новая позиция" confirmClose>
+      <BottomSheet open={addOpen} onClose={() => setAddOpen(false)} title="Новый подарок" confirmClose>
         <AddItemForm
           slug={wishlist.slug}
           onAdded={(item) => {
@@ -406,7 +406,7 @@ export function MyWishlist() {
         />
       </BottomSheet>
 
-      <BottomSheet open={Boolean(editingItem)} onClose={() => setEditingItem(null)} title="Редактировать позицию" confirmClose>
+      <BottomSheet open={Boolean(editingItem)} onClose={() => setEditingItem(null)} title="Редактировать подарок" confirmClose>
         {editingItem && (
           <EditItemForm
             key={editingItem.id}
@@ -478,13 +478,13 @@ function peopleWord(n: number): string {
 }
 
 export function deleteConfirmText(item: Item): string {
-  if (item.status === "bought") return "Этот подарок уже подарили - убрать его из списка? Дарителям писать не будем.";
+  if (item.status === "bought") return "Этот подарок уже подарили — убрать его из списка? Дарителям писать не будем.";
   const n = item.contributorsCount;
   if (n === 0) return "Удалить этот подарок из вишлиста?";
   if (item.maxContributors > 1) {
-    return `В складчине на этот подарок уже ${n === 1 ? "участвует" : "участвуют"} ${n} ${peopleWord(n)} - удалить? Мы сообщим им, что подарок удалён.`;
+    return `В складчине на этот подарок уже ${n === 1 ? "участвует" : "участвуют"} ${n} ${peopleWord(n)} — удалить? Мы сообщим им, что подарок удалён.`;
   }
-  return "Этот подарок уже забронировал 1 человек - удалить? Мы сообщим ему, что подарок удалён и бронь снята.";
+  return "Этот подарок уже забронировал 1 человек — удалить? Мы сообщим ему, что подарок удалён и бронь снята.";
 }
 
 // ТЗ блок 4, п.5.2: "Поделиться" и "Повод" - крупными кнопками в зоне

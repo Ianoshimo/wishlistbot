@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from "react-router-dom";
 import { absoluteApiUrl, api, apiError, formatOccasionDate, formatRub, trackEvent, type UiError, type WishlistResponse } from "../api";
 import { markStartParamHandled, openExternalLink } from "../telegram";
 import { MY_SLUG_KEY } from "./MyWishlist";
+import { GiverCalendarPrompt } from "../components/CalendarSheet";
 import { ErrorBanner, Header, Loading, PayoutLabel, PriorityStar, Screen, StatusBadge, StoreBadge, Thumbnail, mineStatus } from "../components/UI";
 
 // Спека итерации 1, п.9 + флоу-итерация-1.md: первый переход по ссылке
@@ -192,7 +193,7 @@ export function SharedWishlist() {
           >
             <Thumbnail src={item.imageUrl} store={item.store} />
             <div style={{ flexGrow: 1, minWidth: 0 }}>
-              <div style={{ fontSize: 15, fontWeight: 600 }}>{item.title ?? item.url}</div>
+              <div className="clamp2" style={{ fontSize: 15, fontWeight: 600 }}>{item.title ?? item.url}</div>
               {/* QA-9: цена в списке и у дарителя - выбирать подарок под
                   бюджет, не открывая каждую карточку. */}
               <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, marginTop: 4 }}>
@@ -211,6 +212,13 @@ export function SharedWishlist() {
           </Link>
         ))}
       </div>
+      {/* Аудит 2026-10-08, А-49: даритель с бронью или долей в этом списке
+          видит подписку на поводы друзей - она нужна именно ему. */}
+      {wishlist.items.some((i) => i.reservedByMe) && (
+        <div style={{ padding: "0 16px 12px", flexShrink: 0 }}>
+          <GiverCalendarPrompt from="shared_wishlist" />
+        </div>
+      )}
       <div style={{ padding: "4px 16px 20px", flexShrink: 0 }}>
         <button
           onClick={openOwnWishlist}
@@ -228,7 +236,7 @@ export function SharedWishlist() {
           Хочу такой же вишлист
         </button>
         <div style={{ fontSize: 12, color: "var(--text-secondary)", textAlign: "center", marginTop: 8 }}>
-          Соберите свой список желаний - и друзья будут знать, что вам подарить
+          Соберите свой список желаний — и друзья будут знать, что вам подарить
         </div>
       </div>
       {/* Кнопка "Собрать деньгами на подарок" убрана из итерации 1 - см.

@@ -133,6 +133,8 @@ export const CLIENT_EVENTS: Record<string, readonly string[]> = {
   app_opened: ["platform", "tgVersion", "startKind", "colorScheme", "fullscreen", "insideTelegram"],
   screen_viewed: ["screen"],
   share_link_copied: [],
+  // А-50: буфер недоступен, показали "скопируйте вручную".
+  share_link_copy_failed: [],
   // beforeReserve - ссылка открыта до брони (аудит 2026-10-08, А-11).
   store_link_clicked: ["store", "beforeReserve"],
   // А-16: "Отправить в Telegram" на экране "Поделиться".
@@ -140,7 +142,8 @@ export const CLIENT_EVENTS: Record<string, readonly string[]> = {
   fundraiser_link_clicked: [],
   sbp_details_copied: ["field"],
   calendar_add_clicked: [],
-  calendar_subscribe_clicked: [],
+  // from - откуда подписка: шторка владельца или экран чужого списка/брони (А-49).
+  calendar_subscribe_clicked: ["from"],
   form_opened: ["form"],
   error_shown: ["code", "screen"],
   wishlist_switched: [],

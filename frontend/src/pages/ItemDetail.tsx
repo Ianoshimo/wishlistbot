@@ -4,6 +4,7 @@ import { api, apiError, formatRub, trackEvent, type Item, type UiError } from ".
 import { openExternalLink, requestBotMessages } from "../telegram";
 import { BottomSheet, CopyRow, ErrorBanner, Header, Loading, PrimaryButton, Screen, StoreBadge, Thumbnail } from "../components/UI";
 import { formatPhone, normalizePhone } from "../phone";
+import { GiverCalendarPrompt } from "../components/CalendarSheet";
 
 // Спека итерации 1, п.2-3: полный жизненный цикл брони в одном экране,
 // как в дизайн-макете (артборд ItemDetail) - available → reserved → bought.
@@ -56,7 +57,7 @@ export function ItemDetail() {
           <ErrorBanner
             code={loadError.code}
             screen="item"
-            message="Позиция не найдена - возможно, получатель удалил её из вишлиста."
+            message="Подарок не найден — возможно, получатель удалил его из вишлиста."
           />
         </div>
       </Screen>
@@ -146,7 +147,7 @@ export function ItemDetail() {
           {/* А-9: без фото - заглушка в цветах бренда рядом с названием. */}
           {!item.imageUrl && <Thumbnail src={null} store={item.store} size={72} />}
           <div style={{ minWidth: 0 }}>
-          <div style={{ fontSize: 19, fontWeight: 700 }}>{item.title ?? item.url}</div>
+          <div style={{ fontSize: 19, fontWeight: 700, overflowWrap: "anywhere" }}>{item.title ?? item.url}</div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 4 }}>
             {item.price && (
               <span style={{ fontSize: 16, color: "var(--text-secondary)" }}>
@@ -179,7 +180,7 @@ export function ItemDetail() {
                 }}
               >
                 {item.viewerIsOwner
-                  ? "Это ваша позиция - друзья видят её свободной и могут забронировать."
+                  ? "Это ваш подарок — друзья видят его свободным и могут забронировать."
                   : availableText(item)}
               </div>
             )}
@@ -233,6 +234,10 @@ export function ItemDetail() {
             {storeLinkLabel}
           </a>
         )}
+
+        {/* Аудит 2026-10-08, А-49: после брони - предложить подписку на
+            поводы друзей (раньше она была только в шторке своего списка). */}
+        {item.reservedByMe && !item.viewerIsOwner && <GiverCalendarPrompt from="item" />}
       </div>
 
       <div style={{ padding: "12px 16px 20px", borderTop: "1px solid var(--border)", display: "flex", flexDirection: "column", gap: 12 }}>
@@ -259,7 +264,7 @@ export function ItemDetail() {
             )}
             {item.reservedByMe && !item.paidByMe && item.status !== "bought" && (
               <PrimaryButton onClick={markBought} style={{ width: "100%" }}>
-                {isFundraiser ? "Я скинулся" : "Деньги отправлены"}
+                {isFundraiser ? "Моя часть переведена" : "Деньги отправлены"}
               </PrimaryButton>
             )}
           </>
@@ -272,7 +277,7 @@ export function ItemDetail() {
             )}
             {item.status === "reserved" && item.reservedByMe && (
               <PrimaryButton onClick={markBought} style={{ width: "100%" }}>
-                {isSbp ? "Деньги отправлены" : isFundraiser ? "Я перевёл в сбор" : "Отметить купленным"}
+                {isSbp ? "Деньги отправлены" : isFundraiser ? "Деньги переведены в сбор" : "Отметить купленным"}
               </PrimaryButton>
             )}
           </>
@@ -307,7 +312,7 @@ function SplitStatus({
   const share = item.price ? formatRub(Math.round(item.price / item.maxContributors)) : null;
   // QA-13: присоединившиеся ещё не обязательно перевели - "участвуют", а
   // не "скинулись".
-  const progress = `участвуют ${item.contributorsCount} из ${item.maxContributors}`;
+  const progress = `участвуют\u00a0${item.contributorsCount}\u00a0из\u00a0${item.maxContributors}`;
 
   if (item.status === "bought") {
     // QA-19: "Спасибо!" - только участникам; остальным - нейтральный статус.
@@ -315,7 +320,7 @@ function SplitStatus({
       <div style={{ padding: 14, borderRadius: 14, background: "var(--success-soft)", color: "var(--success-text)", fontSize: 13 }}>
         {item.reservedByMe
           ? `Спасибо! Все перевели свою часть (${item.maxContributors} из ${item.maxContributors}).`
-          : "Подарок уже собран - все участники перевели свою часть."}
+          : "Подарок уже собран — все участники перевели свою часть."}
       </div>
     );
   }
@@ -329,7 +334,7 @@ function SplitStatus({
       <div style={{ padding: 14, borderRadius: 14, background: "var(--surface)", border: "1px solid var(--border)", fontSize: 14, color: "var(--text-secondary)" }}>
         {`Ваша складчина: перевели ${paid} из ${item.maxContributors}`}
         {waiting > 0 ? `, ещё ${waiting} ${waiting === 1 ? "участвует" : "участвуют"} и пока не отметили перевод` : ""}
-        {share ? `. Доля - примерно ${share} с человека${paid > 0 && item.price ? `, собрано около ${formatRub(Math.round(item.price / item.maxContributors) * paid)}` : ""}.` : "."}
+        {share ? `. Доля — примерно ${share} с человека${paid > 0 && item.price ? `, собрано около ${formatRub(Math.round(item.price / item.maxContributors) * paid)}` : ""}.` : "."}
       </div>
     );
   }
@@ -339,8 +344,8 @@ function SplitStatus({
       <>
         <div style={{ padding: 14, borderRadius: 14, background: "var(--warning-soft)", color: "var(--warning-text)", fontSize: 13 }}>
           {item.paidByMe
-            ? `Вы перевели свою часть - ждём остальных (${progress})`
-            : `Вы присоединились (${progress}) - переведите свою часть${share ? `, примерно ${share}` : ""}. Место снимется ${expiresIn(item.reservationExpiresAt)}, если не отметить ${fundraiser ? "участие" : "перевод"}`}
+            ? `Вы перевели свою часть — ждём остальных (${progress})`
+            : `Вы присоединились (${progress}) — переведите свою часть${share ? `, примерно ${share}` : ""}. Место снимется ${expiresIn(item.reservationExpiresAt)}, если не отметить ${fundraiser ? "участие" : "перевод"}`}
         </div>
         <button
           onClick={onShowSbp}
@@ -373,10 +378,10 @@ function SplitStatus({
   return (
     <div style={{ padding: 14, borderRadius: 14, background: "var(--surface)", border: "1px solid var(--border)", fontSize: 14, color: "var(--text-secondary)" }}>
       {fundraiser
-        ? `Получатель открыл сбор на этот подарок - ${progress}. Присоединяйтесь и скиньтесь через банк${share ? `, на каждого примерно ${share}` : ""}.`
+        ? `Получатель открыл сбор на этот подарок — ${progress}. Присоединяйтесь и скиньтесь через банк${share ? `, на каждого примерно ${share}` : ""}.`
         : item.selfPurchased
-          ? `Получатель уже купил этот подарок сам - в магазин идти не нужно. Скидываемся - ${progress}. Присоединяйтесь и переведите свою часть по СБП${share ? `, примерно ${share}` : ""}.`
-          : `Получатель собирает деньги на этот подарок - ${progress}. Присоединяйтесь и переведите свою часть по СБП${share ? `, примерно ${share}` : ""}.`}
+          ? `Подарок уже куплен получателем — в магазин идти не нужно. Скидываемся — ${progress}. Присоединяйтесь и переведите свою часть по СБП${share ? `, примерно ${share}` : ""}.`
+          : `Получатель собирает деньги на этот подарок — ${progress}. Присоединяйтесь и переведите свою часть по СБП${share ? `, примерно ${share}` : ""}.`}
     </div>
   );
 }
@@ -416,7 +421,7 @@ function SbpPaymentCard({ item }: { item: Item }) {
       {/* А-5: банк получателя - дарителю нужно выбрать его в переводе по СБП. */}
       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
         <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>Банк получателя</span>
-        <span style={{ fontSize: 15, fontWeight: 600 }}>{item.sbpBank ?? "Не указан - уточните у получателя"}</span>
+        <span style={{ fontSize: 15, fontWeight: 600 }}>{item.sbpBank ?? "Не указан — уточните у получателя"}</span>
       </div>
       {amount && (
         <CopyRow
@@ -453,14 +458,15 @@ const secondaryButton = {
 
 // Текст свободного подарка для дарителя - по способу подарить (А-5).
 function availableText(item: Item): string {
-  const bought = item.selfPurchased ? "Получатель уже купил этот подарок сам - в магазин идти не нужно. " : "";
+  const bought = item.selfPurchased ? "Подарок уже куплен получателем — в магазин идти не нужно. " : "";
   if (item.payoutMethod === "sbp") {
     return `${bought}${item.selfPurchased ? "" : "Получатель просит подарить деньгами и купит подарок сам. "}После брони вы получите номер телефона и банк для перевода по СБП.`;
   }
   if (item.payoutMethod === "fundraiser") {
     return `${bought}${item.selfPurchased ? "" : "Получатель открыл сбор в банке на этот подарок. "}После брони откроется ссылка на сбор.`;
   }
-  return "Позиция ещё свободна. Никто не увидит, что именно вы дарите.";
+  // А-39: не противоречит галочке "Показать получателю, что дарю я" ниже.
+  return "Подарок свободен. По умолчанию получатель не узнает, кто дарит.";
 }
 
 // Срок брони/доли (5 дней, спека п.2; для доли в "скинуться" - с

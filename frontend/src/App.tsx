@@ -3,18 +3,16 @@ import { Home } from "./pages/Home";
 import { ShareWishlist } from "./pages/ShareWishlist";
 import { SharedWishlist } from "./pages/SharedWishlist";
 import { ItemDetail } from "./pages/ItemDetail";
-import { CalendarRecipient } from "./pages/CalendarRecipient";
-import { CalendarGiver } from "./pages/CalendarGiver";
-import { CalendarOrganizer } from "./pages/CalendarOrganizer";
 import { ErrorBanner, Header, Screen } from "./components/UI";
+import { APP_NAME } from "./brand";
 
 // QA-18: неизвестный адрес раньше давал полностью пустой экран.
 function NotFound() {
   return (
     <Screen>
-      <Header title="Вишлист-бот" backTo="/" />
+      <Header title={APP_NAME} backTo="/" />
       <div style={{ padding: 20 }}>
-        <ErrorBanner code="page_not_found" screen="not_found" message="Такой страницы нет - вернитесь к своему вишлисту." />
+        <ErrorBanner code="page_not_found" screen="not_found" message="Такой страницы нет — вернитесь к своему вишлисту." />
       </div>
     </Screen>
   );
@@ -32,13 +30,14 @@ export function App() {
         <Route path="/w/:slug" element={<SharedWishlist />} />
         <Route path="/w/:slug/share" element={<ShareWishlist />} />
         <Route path="/item/:itemId" element={<ItemDetail />} />
-        {/* Аудит 2026-10-08, А-2: экраны сборов /p/* (PoolCreate, PoolProgress,
-            SharePool, Contribute) не подключены, пока итерация 2 выключена -
-            бэкенд-роуты /api/pools* тоже не зарегистрированы. Компоненты
-            остались в pages/ как задел. */}
-        <Route path="/calendar" element={<CalendarRecipient />} />
-        <Route path="/calendar/giver" element={<CalendarGiver />} />
-        <Route path="/calendar/organizer" element={<CalendarOrganizer />} />
+        {/* Аудит 2026-10-08, А-2/А-44: экраны итерации 2 - сборы /p/*
+            (PoolCreate, PoolProgress, SharePool, Contribute) и календари
+            сборов /calendar* (CalendarRecipient/Giver/Organizer) - не
+            подключены, пока итерация 2 выключена: по прямому адресу
+            открывается "Такой страницы нет", а не заглушка со служебным
+            текстом. Компоненты остались в pages/ как задел (в сборку не
+            попадают - их никто не импортирует); бэкенд-роуты /api/pools*
+            тоже не зарегистрированы. Вернуть - добавить Route сюда. */}
         <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>

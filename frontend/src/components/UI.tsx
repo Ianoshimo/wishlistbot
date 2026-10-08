@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Link, useNavigate } from "react-router-dom";
 import { isInsideTelegram, setClosingConfirmation, showTelegramBackButton } from "../telegram";
 import { formatRub, trackEvent } from "../api";
+import { copyText } from "../clipboard";
 
 export function Screen({ children }: { children: ReactNode }) {
   return (
@@ -243,14 +245,11 @@ export function CopyRow({
   const [copied, setCopied] = useState(false);
 
   const copy = async () => {
-    try {
-      await navigator.clipboard.writeText(value);
-      onCopied?.();
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch {
-      // см. комментарий выше
-    }
+    // А-50: общий копировщик с запасным путём (clipboard.ts).
+    if (!(await copyText(value))) return;
+    onCopied?.();
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
   };
 
   return (
@@ -508,9 +507,32 @@ export function BottomSheet({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
 
+  // Аудит 2026-10-08, А-38: шторка - модальный диалог. Рендерится порталом
+  // в body, а всё приложение (#root) на время показа получает inert и
+  // aria-hidden: скринридер и Tab видят только шторку. Фокус уходит в
+  // шторку, после закрытия возвращается туда, откуда её открыли.
+  const titleId = useId();
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const root = document.getElementById("root");
+    const prevFocus = document.activeElement as HTMLElement | null;
+    root?.setAttribute("inert", "");
+    root?.setAttribute("aria-hidden", "true");
+    // Фокус - на сам диалог (скринридер читает заголовок), а не на первое
+    // поле формы: программный фокус в поле на телефоне раскрывал бы
+    // клавиатуру поверх шторки сразу при открытии.
+    panelRef.current?.focus({ preventScroll: true });
+    return () => {
+      root?.removeAttribute("inert");
+      root?.removeAttribute("aria-hidden");
+      prevFocus?.focus?.({ preventScroll: true });
+    };
+  }, [open]);
+
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div
       style={{
         position: "fixed",
@@ -526,7 +548,13 @@ export function BottomSheet({
         style={{ position: "absolute", inset: 0, background: "rgba(10, 8, 20, 0.5)" }}
       />
       <div
+        ref={panelRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
         style={{
+          outline: "none",
           position: "relative",
           width: "100%",
           maxWidth: 480,
@@ -558,7 +586,7 @@ export function BottomSheet({
           <div style={{ width: 36, height: 4, borderRadius: 999, background: "var(--border)" }} />
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 20px" }}>
-          <div className="font-display" style={{ flexGrow: 1, fontSize: 17, fontWeight: 700 }}>
+          <div id={titleId} className="font-display" style={{ flexGrow: 1, fontSize: 17, fontWeight: 700 }}>
             {title}
           </div>
           {/* А-27: кнопка 44x44, видимый кружок прежний - 32x32. */}
@@ -598,7 +626,8 @@ export function BottomSheet({
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -692,14 +721,15 @@ export function ErrorBanner({
 }
 
 // Заглушка для экранов, которые ещё не реализованы предметно (см.
-// Продукт/задачи-итерация-1.md) - навигация уже работает, содержимое нет.
+// Продукт/задачи-итерация-1.md). С аудита 2026-10-08 (А-44) такие экраны
+// не подключены к маршрутам; текст на случай, если заглушку подключат -
+// без служебных ссылок на документы проекта.
 export function Placeholder({ title, backTo }: { title: string; backTo: string }) {
   return (
     <Screen>
       <Header title={title} backTo={backTo} />
       <div style={{ padding: 20, color: "var(--text-secondary)", fontSize: 14 }}>
-        Экран в разработке - см. соответствующий пункт в Продукт/задачи-итерация-1.md
-        и артборд в дизайн-макете.
+        Этот раздел скоро появится.
       </div>
     </Screen>
   );
@@ -773,15 +803,17 @@ export function PayoutLabel({
   if (item.selfPurchased) parts.push("в магазин не нужно");
   const split = item.maxContributors > 1;
   const share = split && item.price ? Math.round(item.price / item.maxContributors) : null;
-  let progress: string | null = null;
+  // А-36: каждый фрагмент прогресса ("участвуют 0 из 8", "собрано ≈ 2 750 ₽")
+  // - неразрывный блок; переносится только между фрагментами, по " · ".
+  const progress: string[] = [];
   if (split && item.status !== "bought") {
     if (item.paidCount !== null && item.paidCount !== undefined) {
       const waiting = item.contributorsCount - item.paidCount;
-      progress = `перевели ${item.paidCount}\u00a0из\u00a0${item.maxContributors}`;
-      if (waiting > 0) progress += ` · ещё\u00a0${waiting}\u00a0${waiting === 1 ? "участвует" : "участвуют"}`;
-      if (share && item.paidCount > 0) progress += ` · собрано ≈\u00a0${formatRub(share * item.paidCount)}`;
+      progress.push(`перевели ${item.paidCount} из ${item.maxContributors}`);
+      if (waiting > 0) progress.push(`ещё ${waiting} ${waiting === 1 ? "участвует" : "участвуют"}`);
+      if (share && item.paidCount > 0) progress.push(`собрано ≈ ${formatRub(share * item.paidCount)}`);
     } else {
-      progress = `участвуют ${item.contributorsCount}\u00a0из\u00a0${item.maxContributors}`;
+      progress.push(`участвуют ${item.contributorsCount} из ${item.maxContributors}`);
     }
   }
   return (
@@ -793,7 +825,16 @@ export function PayoutLabel({
           <span style={{ whiteSpace: "nowrap" }}>по ~{formatRub(share)} с человека</span>
         </>
       )}
-      {progress && <div>{progress}</div>}
+      {progress.length > 0 && (
+        <div>
+          {progress.map((p, i) => (
+            <span key={i}>
+              {i > 0 && " · "}
+              <span style={{ whiteSpace: "nowrap" }}>{p}</span>
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

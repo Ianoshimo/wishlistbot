@@ -3,23 +3,24 @@ import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
 import { Header, PrimaryButton, Screen } from "../components/UI";
 import { openTelegramLink } from "../telegram";
+import { BOT_USERNAME } from "../brand";
+import { copyText } from "../clipboard";
 
-// Задачи-итерация-1.md, Ф8. Бот зарегистрирован в @BotFather 2026-10-01.
-const BOT_USERNAME = "wishhdesk_bot";
 
 // Аудит 2026-10-08, А-16: главный способ поделиться - "Отправить в
 // Telegram" (выбор чата с готовым текстом через t.me/share/url), а не
 // "скопировать → выйти → найти чат → вставить". Копирование осталось рядом.
 export function shareUrl(link: string, title: string | null): string {
   const text = title
-    ? `Мой вишлист «${title}» - посмотрите и забронируйте подарок, чтобы не совпасть с другими 🎁`
-    : "Мой вишлист - посмотрите и забронируйте подарок, чтобы не совпасть с другими 🎁";
+    ? `Мой вишлист «${title}» — посмотрите и забронируйте подарок, чтобы не совпасть с другими 🎁`
+    : "Мой вишлист — посмотрите и забронируйте подарок, чтобы не совпасть с другими 🎁";
   return `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`;
 }
 
 export function ShareWishlist() {
   const { slug = "" } = useParams();
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
   const [title, setTitle] = useState<string | null>(null);
   const link = `https://t.me/${BOT_USERNAME}?startapp=w_${slug}`;
 
@@ -36,11 +37,18 @@ export function ShareWishlist() {
     openTelegramLink(shareUrl(link, title));
   };
 
+  // А-50: буфер может быть недоступен - тогда подсказка скопировать вручную
+  // (ссылка выделяется целиком по тапу), а не молчаливая кнопка.
   const copy = async () => {
-    await navigator.clipboard.writeText(link);
-    trackEvent("share_link_copied");
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    if (await copyText(link)) {
+      trackEvent("share_link_copied");
+      setCopyFailed(false);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } else {
+      trackEvent("share_link_copy_failed");
+      setCopyFailed(true);
+    }
   };
 
   return (
@@ -49,13 +57,26 @@ export function ShareWishlist() {
       <div style={{ padding: 28, display: "flex", flexDirection: "column", alignItems: "center", gap: 14 }}>
         <div className="font-display" style={{ fontSize: 18, fontWeight: 700 }}>Вишлист готов</div>
         <div style={{ fontSize: 14, color: "var(--text-secondary)", textAlign: "center", maxWidth: 280 }}>
-          Отправьте ссылку друзьям - они увидят список и смогут забронировать подарок
+          Отправьте ссылку друзьям — они увидят список и смогут забронировать подарок
         </div>
         <PrimaryButton onClick={send} style={{ width: "100%" }}>
           Отправить в Telegram
         </PrimaryButton>
         <div style={{ width: "100%", padding: 14, borderRadius: 14, background: "var(--surface)", border: "1px solid var(--border)", display: "flex", alignItems: "center", gap: 10 }}>
-          <div style={{ flexGrow: 1, fontSize: 13, color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          <div
+            data-testid="share-link"
+            style={{
+              flexGrow: 1,
+              fontSize: 13,
+              color: "var(--text-secondary)",
+              overflow: "hidden",
+              textOverflow: copyFailed ? undefined : "ellipsis",
+              whiteSpace: copyFailed ? "normal" : "nowrap",
+              overflowWrap: "anywhere",
+              userSelect: "all",
+              WebkitUserSelect: "all",
+            }}
+          >
             {link}
           </div>
           <button
@@ -66,6 +87,11 @@ export function ShareWishlist() {
             {copied ? "Скопировано" : "Копировать"}
           </button>
         </div>
+        {copyFailed && (
+          <div role="alert" style={{ fontSize: 12.5, color: "var(--text-secondary)", textAlign: "center" }}>
+            Не получилось скопировать автоматически — нажмите на ссылку, чтобы выделить её, и скопируйте вручную.
+          </div>
+        )}
       </div>
     </Screen>
   );

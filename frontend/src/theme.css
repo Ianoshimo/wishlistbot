@@ -152,3 +152,14 @@ input[type="radio"] {
   --safe-top: max(env(safe-area-inset-top, 0px), calc(var(--tg-safe-area-inset-top, 0px) + var(--tg-content-safe-area-inset-top, 0px)));
   --safe-bottom: max(env(safe-area-inset-bottom, 0px), calc(var(--tg-safe-area-inset-bottom, 0px) + var(--tg-content-safe-area-inset-bottom, 0px)));
 }
+
+/* Аудит 2026-10-08, А-37: название подарка в карточке списка - не больше
+   двух строк, остальное многоточием (полное - на экране подарка).
+   overflow-wrap - чтобы длинная ссылка без пробелов не распирала карточку. */
+.clamp2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}

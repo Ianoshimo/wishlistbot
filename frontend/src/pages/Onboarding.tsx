@@ -1,12 +1,13 @@
 import { trackEvent } from "../api";
+import { APP_NAME } from "../brand";
 // Спека итерации 1, п.6: первый запуск без своего вишлиста и без чужой
 // ссылки. Отдельный от MyWishlist компонент - в отличие от пустого
 // вишлиста (0 позиций, но вишлист уже создан), здесь ещё нет даже своего
 // вишлиста.
 export function Onboarding({ onStart }: { onStart: () => void }) {
   const points = [
-    "Собирайте вишлист - добавляйте ссылки на подарки с любых магазинов",
-    "Бронируйте без задвоений - друзья сразу видят, что уже занято",
+    "Собирайте вишлист — добавляйте ссылки на подарки с любых магазинов",
+    "Бронируйте без задвоений — друзья сразу видят, что уже занято",
   ];
 
   return (
@@ -23,7 +24,7 @@ export function Onboarding({ onStart }: { onStart: () => void }) {
           textAlign: "center",
         }}
       >
-        <div className="font-display" style={{ fontSize: 20, fontWeight: 700 }}>Вишлист-бот</div>
+        <div className="font-display" style={{ fontSize: 20, fontWeight: 700 }}>{APP_NAME}</div>
         <div style={{ fontSize: 14, color: "var(--text-secondary)" }}>Дарите не гадая</div>
 
         <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 10, marginTop: 12, textAlign: "left" }}>

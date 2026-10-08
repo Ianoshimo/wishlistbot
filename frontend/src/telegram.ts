@@ -21,6 +21,9 @@ interface TelegramWebApp {
   version?: string;
   isFullscreen?: boolean;
   disableVerticalSwipes?: () => void;
+  setHeaderColor?: (color: string) => void;
+  setBackgroundColor?: (color: string) => void;
+  setBottomBarColor?: (color: string) => void;
   enableClosingConfirmation?: () => void;
   disableClosingConfirmation?: () => void;
   BackButton?: {
@@ -73,9 +76,30 @@ export function initTelegram() {
     // старый клиент - жест останется системным
   }
   document.documentElement.setAttribute("data-theme", webApp.colorScheme);
+  applyChromeColors();
   webApp.onEvent("themeChanged", () => {
     document.documentElement.setAttribute("data-theme", webApp.colorScheme);
+    applyChromeColors();
   });
+}
+
+// Аудит 2026-10-08, А-43: шапка Telegram ("Закрыть · Whish Helper") и фон
+// под мини-аппом были системно-серыми над фиолетово-чёрным фоном
+// приложения. Красим их в --bg текущей темы. Произвольный цвет шапки -
+// Bot API 6.9+, фон - 6.1+, нижняя панель - 7.10+; на старых клиентах
+// вызовы пропускаются (или бросают - тогда цвет остаётся системным).
+function applyChromeColors() {
+  if (!webApp) return;
+  const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim();
+  if (!/^#[0-9a-f]{6}$/i.test(bg)) return;
+  const atLeast = (v: string) => !webApp.isVersionAtLeast || webApp.isVersionAtLeast(v);
+  try {
+    if (atLeast("6.9")) webApp.setHeaderColor?.(bg);
+    if (atLeast("6.1")) webApp.setBackgroundColor?.(bg);
+    if (atLeast("7.10")) webApp.setBottomBarColor?.(bg);
+  } catch {
+    // старый клиент - цвета останутся системными
+  }
 }
 
 const DEV_ID_KEY = "wishlistbot_dev_telegram_id";

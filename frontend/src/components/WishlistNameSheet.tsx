@@ -28,7 +28,7 @@ export function WishlistNameSheet({
     // QA-4: лимит бэкенда - 60 символов; говорим об этом прямо, а не общим
     // "Проверьте введённые данные".
     if (title.trim().length > TITLE_MAX) {
-      setError(uiError("title_too_long", `Название - не длиннее ${TITLE_MAX} символов`));
+      setError(uiError("title_too_long", `Название — не длиннее ${TITLE_MAX} символов`));
       return;
     }
     setSaving(true);

@@ -13,7 +13,9 @@ import { PayoutDetails, PayoutSegment, toMethod, validatePayout, type PayoutValu
 export const MAX_CONTRIBUTORS_CAP = 100;
 // Аудит 2026-10-08, А-17: потолок цены, как на бэкенде (20 млн ₽).
 export const MAX_PRICE_RUB = 20_000_000;
-export const PRICE_TOO_LARGE_TEXT = "Цена слишком большая - максимум 20 000 000 ₽";
+export const PRICE_TOO_LARGE_TEXT = "Цена слишком большая — максимум 20 000 000 ₽";
+// Аудит 2026-10-08, А-37: как ITEM_TITLE_MAX на бэкенде.
+export const ITEM_TITLE_MAX = 120;
 // Подсказка про деньги появляется для подарков от этой цены (в рублях).
 const MONEY_HINT_RUB = 5000;
 
@@ -60,11 +62,11 @@ export function AddItemForm({ slug, onAdded }: { slug: string; onAdded: (item: I
     if (price && Number(price) <= 0) return setError(uiError("invalid_price", "Цена должна быть больше нуля"));
     if (price && Number(price) > MAX_PRICE_RUB) return setError(uiError("price_too_large", PRICE_TOO_LARGE_TEXT));
     if (selfPurchased && !money) {
-      return setError(uiError("self_purchased_needs_payout", "Подарок уже куплен - выберите, как друзьям перевести деньги: СБП или сбор"));
+      return setError(uiError("self_purchased_needs_payout", "Подарок уже куплен — выберите, как друзьям перевести деньги: СБП или сбор"));
     }
     const n = Number(maxContributors);
     if (split && (!Number.isInteger(n) || n < 2 || n > MAX_CONTRIBUTORS_CAP)) {
-      return setError(uiError("invalid_contributors", `Сколько человек может скинуться - от 2 до ${MAX_CONTRIBUTORS_CAP}`));
+      return setError(uiError("invalid_contributors", `Сколько человек может скинуться — от 2 до ${MAX_CONTRIBUTORS_CAP}`));
     }
     const checked = validatePayout(payout, true);
     if (checked.error) return setError(checked.error);
@@ -78,7 +80,7 @@ export function AddItemForm({ slug, onAdded }: { slug: string; onAdded: (item: I
     try {
       const item = await api.addItem(slug, {
         url: product.url,
-        title: title || undefined,
+        title: title.trim() || undefined,
         price: price ? Math.round(Number(price) * 100) : undefined,
         selfPurchased: selfPurchased || undefined,
         maxContributors: split && money ? n : undefined,
@@ -107,7 +109,7 @@ export function AddItemForm({ slug, onAdded }: { slug: string; onAdded: (item: I
         style={{ padding: "4px 20px 20px", display: "flex", flexDirection: "column", gap: 20 }}
       >
         <Field label="Ссылка на товар" value={url} onChange={setUrl} placeholder="Ссылка или текст из «Поделиться»" type="url" />
-        <Field label="Название (необязательно)" value={title} onChange={setTitle} placeholder="Например: наушники Sony" />
+        <Field label="Название (необязательно)" value={title} onChange={setTitle} placeholder="Например: наушники Sony" maxLength={ITEM_TITLE_MAX} />
         <Field label="Цена, ₽ (необязательно)" value={price} onChange={setPrice} placeholder="6990" type="number" min="0" />
 
         <ToggleRow
@@ -117,7 +119,7 @@ export function AddItemForm({ slug, onAdded }: { slug: string; onAdded: (item: I
             // Уже куплено - в магазин идти незачем: сразу предлагаем СБП.
             if (v && payout.choice === "none") patchPayout({ choice: "sbp" });
           }}
-          title="Я уже купил этот подарок"
+          title="Этот подарок уже у меня"
           hint="Друзья увидят, что в магазин идти не нужно, и переведут деньги выбранным способом"
         />
 
@@ -132,7 +134,7 @@ export function AddItemForm({ slug, onAdded }: { slug: string; onAdded: (item: I
 
         {!money && Number(price) >= MONEY_HINT_RUB && (
           <div style={{ fontSize: 13, color: "var(--text-secondary)", padding: "10px 12px", borderRadius: 12, background: "var(--accent-soft)" }}>
-            Дорогой подарок? Выберите «СБП» или «Сбор» и включите «Можно скинуться нескольким» - друзья скинутся вместе.
+            Дорогой подарок? Выберите «СБП» или «Сбор» и включите «Можно скинуться нескольким» — друзья скинутся вместе.
           </div>
         )}
 
@@ -151,7 +153,7 @@ export function AddItemForm({ slug, onAdded }: { slug: string; onAdded: (item: I
 
         {split && money && (
           <Field
-            label={`Сколько человек может скинуться (2-${MAX_CONTRIBUTORS_CAP})`}
+            label={`Сколько человек может скинуться (2–${MAX_CONTRIBUTORS_CAP})`}
             value={maxContributors}
             onChange={setMaxContributors}
             type="number"
@@ -167,7 +169,7 @@ export function AddItemForm({ slug, onAdded }: { slug: string; onAdded: (item: I
           // QA-5: подгрузка фото/названия (особенно Wildberries через
           // Apify) может идти до ~30 с - без пояснения кажется зависанием.
           <div style={{ fontSize: 12, color: "var(--text-secondary)", textAlign: "center", marginBottom: 8 }}>
-            Подтягиваем фото и название из магазина - это может занять до 30 секунд
+            Подтягиваем фото и название из магазина — это может занять до 30 секунд
           </div>
         )}
         <PrimaryButton onClick={submit} disabled={!url || saving} style={{ width: "100%" }}>
