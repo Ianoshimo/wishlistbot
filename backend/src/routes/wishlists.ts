@@ -4,6 +4,7 @@ import { preprocessUrlInput } from "../services/linkInput.js";
 import { z } from "zod";
 import { db } from "../db.js";
 import { resolveItem, serializeItemView } from "../services/itemView.js";
+import { resolveExpiredReservation } from "../services/reservation.js";
 import { createItemFromUrl } from "../services/itemCreate.js";
 import { EMPTY_ITEM, planItemEdit } from "../services/itemEdit.js";
 import { itemDeletedText } from "../services/giverMessages.js";
@@ -401,17 +402,22 @@ export async function wishlistRoutes(app: FastifyInstance) {
       return reply.code(403).send({ error: "not_your_wishlist" });
     }
 
+    // А-13: сначала снимаем истёкшие бронь/доли - их держателям писать об
+    // удалении незачем, место у них уже снято.
+    await resolveExpiredReservation(itemId);
+    const fresh = await db.item.findUniqueOrThrow({ where: { id: itemId } });
+
     // Аудит 2026-10-08, А-13: удалять подарок с дарителями можно (фронт
     // предупреждает числом участников), но каждому дарителю некупленного
     // подарка бот сообщает об удалении - отдельно, без упоминания других
     // дарителей. Купленный подарок - уже подарен, дарителям не пишем.
     const shares = await db.giftShare.findMany({ where: { itemId }, include: { user: true } });
     const reservedBy =
-      item.maxContributors <= 1 && item.status === "reserved" && item.reservedByUserId
-        ? await db.user.findUnique({ where: { id: item.reservedByUserId } })
+      fresh.maxContributors <= 1 && fresh.status === "reserved" && fresh.reservedByUserId
+        ? await db.user.findUnique({ where: { id: fresh.reservedByUserId } })
         : null;
     const toNotify: { userId: string; telegramId: bigint; paid: boolean }[] =
-      item.status === "bought"
+      fresh.status === "bought"
         ? []
         : item.maxContributors > 1
           ? shares.map((sh) => ({ userId: sh.userId, telegramId: sh.user.telegramId, paid: sh.paid }))
