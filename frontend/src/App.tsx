@@ -3,10 +3,6 @@ import { Home } from "./pages/Home";
 import { ShareWishlist } from "./pages/ShareWishlist";
 import { SharedWishlist } from "./pages/SharedWishlist";
 import { ItemDetail } from "./pages/ItemDetail";
-import { PoolCreate } from "./pages/PoolCreate";
-import { SharePool } from "./pages/SharePool";
-import { PoolProgress } from "./pages/PoolProgress";
-import { Contribute } from "./pages/Contribute";
 import { CalendarRecipient } from "./pages/CalendarRecipient";
 import { CalendarGiver } from "./pages/CalendarGiver";
 import { CalendarOrganizer } from "./pages/CalendarOrganizer";
@@ -36,10 +32,10 @@ export function App() {
         <Route path="/w/:slug" element={<SharedWishlist />} />
         <Route path="/w/:slug/share" element={<ShareWishlist />} />
         <Route path="/item/:itemId" element={<ItemDetail />} />
-        <Route path="/p/new" element={<PoolCreate />} />
-        <Route path="/p/:id" element={<PoolProgress />} />
-        <Route path="/p/:id/share" element={<SharePool />} />
-        <Route path="/p/:id/contribute" element={<Contribute />} />
+        {/* Аудит 2026-10-08, А-2: экраны сборов /p/* (PoolCreate, PoolProgress,
+            SharePool, Contribute) не подключены, пока итерация 2 выключена -
+            бэкенд-роуты /api/pools* тоже не зарегистрированы. Компоненты
+            остались в pages/ как задел. */}
         <Route path="/calendar" element={<CalendarRecipient />} />
         <Route path="/calendar/giver" element={<CalendarGiver />} />
         <Route path="/calendar/organizer" element={<CalendarOrganizer />} />

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { absoluteApiUrl, api, apiError, formatOccasionDate, formatRub, trackEvent, type UiError, type WishlistResponse } from "../api";
-import { openExternalLink } from "../telegram";
+import { markStartParamHandled, openExternalLink } from "../telegram";
+import { MY_SLUG_KEY } from "./MyWishlist";
 import { ErrorBanner, Header, PriorityStar, Screen, StatusBadge, StoreBadge, Thumbnail } from "../components/UI";
 
 // Спека итерации 1, п.9 + флоу-итерация-1.md: первый переход по ссылке
@@ -33,8 +34,19 @@ export function SharedWishlist() {
   // любопытства - проверить, как выглядит у друзей), видел экран
   // приглашения "чужого" человека - редиректим на свой редактируемый
   // вишлист вместо read-only чужого вида.
+  //
+  // Аудит 2026-10-08, А-1: раньше "/" снова разбирал start_param и кидал
+  // обратно сюда - бесконечная петля. Теперь start_param отмечен
+  // обработанным, а владельцу открываем именно этот список (у него их
+  // может быть до 3), а не тот, что был активен последним.
   useEffect(() => {
     if (wishlist?.isOwner) {
+      markStartParamHandled();
+      try {
+        localStorage.setItem(MY_SLUG_KEY, wishlist.slug);
+      } catch {
+        // без localStorage MyWishlist сам возьмёт первый список владельца
+      }
       navigate("/", { replace: true });
     }
   }, [wishlist, navigate]);

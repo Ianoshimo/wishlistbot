@@ -103,6 +103,49 @@ export function getStartParam(): string | null {
   return webApp?.initDataUnsafe.start_param ?? null;
 }
 
+// Аудит 2026-10-08, А-1/А-3: start_param живёт всю сессию мини-аппа, а
+// Home разбирал его при КАЖДОМ монтировании "/". Владелец по своей ссылке
+// уходил в петлю /w/<slug> -> "/" -> /w/<slug> (сотни запросов в секунду),
+// даритель не мог попасть в свой список - "/" снова кидал на чужой.
+// Теперь переход по start_param - один раз за сессию: флаг в
+// sessionStorage (на случай перезагрузки страницы) плюс модульная
+// переменная (если sessionStorage недоступен). Флаг хранит сам параметр -
+// новый запуск с другой ссылкой в том же WebView обработается заново.
+const START_HANDLED_KEY = "wishlistbot_start_param_handled";
+let startHandledInMemory: string | null = null;
+
+function startParamHandled(param: string): boolean {
+  if (startHandledInMemory === param) return true;
+  try {
+    return sessionStorage.getItem(START_HANDLED_KEY) === param;
+  } catch {
+    return false;
+  }
+}
+
+// Куда перейти по start_param при открытии "/" - или null, если перехода
+// нет или он уже был в этой сессии. Чистая функция, без побочных эффектов
+// (её можно звать в рендере); отметку ставит markStartParamHandled.
+// p_<poolId> (сборы итерации 2) не обрабатывается, пока итерация 2
+// выключена (А-2).
+export function pendingStartRedirect(): string | null {
+  const param = getStartParam();
+  if (!param || startParamHandled(param)) return null;
+  if (param.startsWith("w_") && param.length > 2) return `/w/${param.slice(2)}`;
+  return null;
+}
+
+export function markStartParamHandled(): void {
+  const param = getStartParam();
+  if (!param) return;
+  startHandledInMemory = param;
+  try {
+    sessionStorage.setItem(START_HANDLED_KEY, param);
+  } catch {
+    // приватный режим/запрет хранилища - хватит модульной переменной
+  }
+}
+
 export function getMainButton() {
   return webApp?.MainButton ?? null;
 }

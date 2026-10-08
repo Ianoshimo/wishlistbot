@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { getStartParam } from "../telegram";
+import { markStartParamHandled, pendingStartRedirect } from "../telegram";
 import { api } from "../api";
 import { MyWishlist, MY_SLUG_KEY } from "./MyWishlist";
 import { Onboarding } from "./Onboarding";
@@ -10,6 +10,9 @@ import { Onboarding } from "./Onboarding";
 // показываем Onboarding (спека, п.6), а не сразу пустой список.
 export function Home() {
   const navigate = useNavigate();
+  // А-1/А-3: переход по start_param - один раз за сессию (см. telegram.ts).
+  // Решаем в рендере, чтобы при переходе не монтировать MyWishlist зря.
+  const startRedirect = pendingStartRedirect();
   // Беклог В-7: при useState(false) первый рендер отдавал <MyWishlist/>,
   // её эффект (дочерний, выполняется раньше родительского) успевал
   // дёрнуть POST /api/wishlists до того, как этот эффект решал показать
@@ -20,7 +23,7 @@ export function Home() {
   // а списки на сервере остались - тогда онбординг "Создать свой вишлист"
   // вводит в заблуждение. Пока проверяем, не показываем ничего; MyWishlist
   // монтируется только когда списки точно есть, поэтому В-7 не возвращается.
-  const [checkingExisting, setCheckingExisting] = useState(showOnboarding);
+  const [checkingExisting, setCheckingExisting] = useState(() => showOnboarding && !startRedirect);
   useEffect(() => {
     if (!checkingExisting) return;
     api
@@ -33,16 +36,12 @@ export function Home() {
   }, [checkingExisting]);
 
   useEffect(() => {
-    const param = getStartParam();
-    if (param?.startsWith("w_")) {
-      navigate(`/w/${param.slice(2)}`, { replace: true });
-      return;
-    }
-    if (param?.startsWith("p_")) {
-      navigate(`/p/${param.slice(2)}`, { replace: true });
-    }
-  }, [navigate]);
+    if (!startRedirect) return;
+    markStartParamHandled();
+    navigate(startRedirect, { replace: true });
+  }, [startRedirect, navigate]);
 
+  if (startRedirect) return null;
   if (checkingExisting) return null;
 
   if (showOnboarding) {

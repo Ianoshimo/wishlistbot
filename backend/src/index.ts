@@ -7,7 +7,6 @@ import { env } from "./env.js";
 import { bot } from "./bot/bot.js";
 import { wishlistRoutes } from "./routes/wishlists.js";
 import { itemRoutes } from "./routes/items.js";
-import { poolRoutes } from "./routes/pools.js";
 import { calendarRoutes } from "./routes/calendar.js";
 import { eventRoutes } from "./routes/events.js";
 import { track } from "./services/analytics.js";
@@ -45,7 +44,13 @@ app.addHook("onResponse", async (req, reply) => {
 await app.register(cors, { origin: [env.MINI_APP_URL, "http://localhost:5173"] });
 await app.register(wishlistRoutes);
 await app.register(itemRoutes);
-await app.register(poolRoutes);
+// Аудит 2026-10-08, А-2 (P0): роуты сборов итерации 2 (routes/pools.ts)
+// не регистрируются, пока итерация 2 выключена - в них нет проверки
+// подписи initData (telegramId берётся из тела, /extend не проверяет
+// ничего), любой мог создавать "пользователей", сборы и взносы от чужого
+// имени. Код роутов не удалён - задел под итерацию 2. Перед включением:
+// перевести на resolveTelegramId + проверку организатора, затем вернуть
+// `await app.register(poolRoutes)` (import из "./routes/pools.js").
 await app.register(calendarRoutes);
 await app.register(eventRoutes);
 
